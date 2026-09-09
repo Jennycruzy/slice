@@ -1,0 +1,27 @@
+{
+  "capturedAt": "2026-09-09T10:54:43.647Z",
+  "network": "Somnia Shannon",
+  "chainId": 50312,
+  "source": {
+    "sdk": "@somnia-chain/markets-sdk",
+    "sdkVersion": "0.29.0",
+    "indexerUrl": "https://dev.smk.somnia.host/v1/graphql",
+    "rpcUrl": "https://dream-rpc.somnia.network",
+    "method": "listLiveBinaryMarkets + getMarketOnchain + getBinaryBookParams"
+  },
+  "market": {
+    "marketId": "0x0000000000000000000000000000000000000000000000000000000000017fa1",
+    "question": "Pricefeed test: will BTC/USDC's price be at or above 79034.43 at unix time 1788951300?",
+    "asset": "BTC",
+    "collateral": "0x70a86d8842fb63c4ad2b7cdddf530ebf1bb25d8e",
+    "pool": "0xe259E659DF538e1816d95aA6D26123242B8a96d1",
+    "decimals": 6,
+    "expiry": "1788951300",
+    "status": 1,
+    "bookGrid": {
+      "tickSize": "1000",
+      "minQuantity": "1000",
+      "lotSize": "1000"
+    }
+  }
+}

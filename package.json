@@ -1,0 +1,37 @@
+{
+  "name": "slice",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/core",
+    "packages/mcp"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm --workspace @slice/api run dev",
+    "dev:web": "npm --workspace @slice/web run dev",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "audit:integrity": "node scripts/audit-integrity.mjs",
+    "reactivity:subscribe": "tsx scripts/create-reactivity-subscription.ts",
+    "contracts:compile": "solcjs --base-path contracts --include-path node_modules --optimize --bin --abi contracts/src/SliceSessionPolicy.sol contracts/src/SliceExitHandler.sol -o contracts/out"
+  },
+  "devDependencies": {
+    "@somnia-chain/reactivity": "^0.2.1",
+    "@somnia-chain/reactivity-contracts": "^0.2.1",
+    "@types/node": "^22.15.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "solc": "0.8.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.2",
+    "vitest": "^3.1.1"
+  },
+  "dependencies": {
+    "ccxt": "4.5.78"
+  }
+}

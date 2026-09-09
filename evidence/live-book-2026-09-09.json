@@ -1,0 +1,21 @@
+{
+  "capturedAt": "2026-09-09T11:03:10.811Z",
+  "network": "Somnia Shannon",
+  "chainId": 50312,
+  "source": {
+    "rpcUrl": "https://dream-rpc.somnia.network",
+    "method": "eth_call getAllOpenOrdersOffChain at pinned latest block"
+  },
+  "marketId": "0x0000000000000000000000000000000000000000000000000000000000017fa1",
+  "pool": "0xe259E659DF538e1816d95aA6D26123242B8a96d1",
+  "decimals": 6,
+  "blockNumber": "483785748",
+  "blockTimestamp": "1788951789",
+  "orders": [],
+  "normalizedBook": {
+    "bids": [],
+    "asks": [],
+    "source": "dreamdex-live"
+  },
+  "note": "This is an observed empty live book, not an inferred price. The preview correctly refuses a non-zero executable request until live depth exists."
+}
