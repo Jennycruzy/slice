@@ -15,7 +15,7 @@ import {
   type SessionGrant,
   type TradeSide,
 } from "@slice/core";
-import { parseUnits, type Address, type Hex } from "viem";
+import { formatUnits, parseUnits, type Address, type Hex } from "viem";
 import type { AppEnv } from "./env.js";
 import { PostgresStore, type ExecutionRecord } from "./store.js";
 import { DreamDexVenue, type PlacedChild, type VenueMarket } from "./venue.js";
@@ -204,18 +204,28 @@ export class ExecutionEngine {
       let remaining = Decimal.max(new Decimal(request.quantity).sub(alreadyFilled), 0);
       const plans = this.planSlices({ ...request, quantity: remaining.toFixed() }, snapshot, displayQuantity, market);
       let sequence = initial.children.reduce((max, child) => Math.max(max, child.sequence), 0);
+      // Every child must sit on the venue's lot grid. Dust left by rounding is carried into the
+      // next tranche, and a remainder below the venue minimum is treated as filled rather than
+      // submitted as an order the venue would reject.
+      const grid = await this.venue.exchange.client.getBinaryBookParams(market.onchain.pool);
+      const decimals = market.onchain.decimals;
+      const snapToLot = (quantity: Decimal) => new Decimal(formatUnits(roundDownToLot(parseUnits(quantity.toFixed(decimals, Decimal.ROUND_DOWN), decimals), grid.lotSize), decimals));
+      const minimumQuantity = new Decimal(formatUnits(grid.minQuantity, decimals));
+      const belowMinimum = (quantity: Decimal) => snapToLot(quantity).lt(minimumQuantity);
 
       for (let index = 0; index < plans.length; index += 1) {
         const plan = plans[index];
         if (plan === undefined) break;
-        if (remaining.lte(0)) break;
+        if (remaining.lte(0) || belowMinimum(remaining)) break;
+        const planned = snapToLot(Decimal.min(remaining, plan.quantity));
+        if (planned.lt(minimumQuantity)) continue;
         await this.waitUntil(plan.startsAt, executionId);
         const current = await this.status(executionId);
         if (current.cancelRequested) {
           await this.finish(executionId, market, "cancelled", "user_cancelled");
           return;
         }
-        const plannedQuantity = Decimal.min(remaining, plan.quantity).toFixed();
+        const plannedQuantity = planned.toFixed();
         const result = await this.placeWithRetry({ executionId, request, market, quantity: plannedQuantity, sequence: sequence + 1 });
         sequence += 1;
         const filled = Decimal.min(new Decimal(result.filledQuantity), new Decimal(plannedQuantity));
@@ -234,7 +244,7 @@ export class ExecutionEngine {
       const endState = await this.status(executionId);
       if (endState.cancelRequested) {
         await this.finish(executionId, market, "cancelled", "user_cancelled");
-      } else if (remaining.lte(0)) {
+      } else if (remaining.lte(0) || belowMinimum(remaining)) {
         await this.finish(executionId, market, "completed");
       } else {
         await this.finish(executionId, market, "partial", "window_complete");
@@ -423,4 +433,9 @@ export class ExecutionEngine {
       this.touch();
     }
   }
+}
+
+function roundDownToLot(value: bigint, lotSize: bigint): bigint {
+  if (lotSize <= 0n) throw new Error("Venue returned an invalid order grid");
+  return (value / lotSize) * lotSize;
 }
