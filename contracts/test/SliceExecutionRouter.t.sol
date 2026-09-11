@@ -47,9 +47,16 @@ contract MockERC20 {
 
 contract MockPool {
     bool public succeeds = true;
+    address public collateral;
+    uint256 public collateralToConsume;
 
     function setSucceeds(bool value) external {
         succeeds = value;
+    }
+
+    function setPartialCollateral(address collateral_, uint256 amount) external {
+        collateral = collateral_;
+        collateralToConsume = amount;
     }
 
     function placeBinaryOrder(
@@ -63,6 +70,9 @@ contract MockPool {
         uint96,
         uint64
     ) external payable returns (bool success, uint128 id) {
+        if (collateralToConsume != 0) {
+            MockERC20(collateral).transferFrom(msg.sender, address(this), collateralToConsume);
+        }
         return (succeeds, 99);
     }
 }
@@ -226,6 +236,20 @@ contract SliceExecutionRouterTest {
         assertTrue(success, "venue result should be true");
         assertEq(collateral.balanceOf(owner), beforeBalance, "unspent collateral must return");
         assertEq(router.usedContracts(policy.hashGrant(_policyGrant())), CHILD, "successful route consumes the requested cap");
+    }
+
+    function testPartialFillRefundsUnusedCollateral() public {
+        uint256 charged = 2_500_000;
+        pool.setPartialCollateral(address(collateral), charged);
+        uint256 beforeBalance = collateral.balanceOf(owner);
+
+        vm.prank(executor);
+        (bool success,) = _execute(address(pool), address(collateral), grant.outcomeToken, grant.outcomeTokenId, ONE);
+
+        assertTrue(success, "partial venue fill should still succeed");
+        assertEq(collateral.balanceOf(owner), beforeBalance - charged, "only consumed collateral may leave the router");
+        assertEq(collateral.balanceOf(address(router)), 0, "partial fill must not strand collateral in the router");
+        assertEq(collateral.balanceOf(address(pool)), charged, "mock venue should retain only the consumed collateral");
     }
 
     function _execute(address poolAddress, address collateralAddress, address outcomeTokenAddress, uint256 outcomeTokenId, uint256 oneCollateral) private returns (bool success, uint128 id) {
