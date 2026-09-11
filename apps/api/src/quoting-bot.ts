@@ -153,11 +153,16 @@ export class QuotingBot {
     const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.quoterPublicClient });
     const remaining: Quote[] = [];
     for (const quote of this.openQuotes) {
+      const openOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, this.venue.quoterAddress);
+      if (!openOrderIds.some((openOrderId) => openOrderId === quote.orderId)) {
+        this.log("Quote is no longer resting for the quoter account", { pool: quote.pool, orderId: quote.orderId.toString() });
+        continue;
+      }
       try {
         await trader.cancelOrder({ pool: quote.pool, orderId: quote.orderId });
       } catch (error) {
-        const chainOrder = await this.venue.exchange.client.getOrder(quote.pool, quote.orderId);
-        if (chainOrder !== null) {
+        const remainingOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, this.venue.quoterAddress);
+        if (remainingOrderIds.some((openOrderId) => openOrderId === quote.orderId)) {
           remaining.push(quote);
           throw new Error(`Quote cancel failed while the order is still live: ${error instanceof Error ? error.message : String(error)}`);
         }
