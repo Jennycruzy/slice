@@ -222,20 +222,20 @@ export class DreamDexVenue {
   }
 
   async listLiveMarkets(): Promise<VenueMarket[]> {
-    const rows = await this.exchange.client.listLiveBinaryMarkets({ limit: this.config.maxBookLevels });
-    const markets: VenueMarket[] = [];
     const expiryCutoff = BigInt(Math.floor(Date.now() / 1000) + this.config.minExpiryHeadroomSeconds);
-    for (const row of rows) {
-      if (!isBinaryMarket(row)) continue;
+    const rows = await this.exchange.client.listLiveBinaryMarkets({
+      limit: Math.min(this.config.maxBookLevels, 25),
+      nowSec: Number(expiryCutoff),
+    });
+    const markets = await Promise.all(rows.filter(isBinaryMarket).map(async (row) => {
       try {
         const onchain = await this.exchange.client.getMarketOnchain(row.marketId as Hex);
-        if (onchain.status !== 1) continue;
-        if (onchain.expiry < expiryCutoff) continue;
-        markets.push(this.toVenueMarket(row, onchain));
+        if (onchain.status !== 1 || onchain.expiry < expiryCutoff) return null;
+        return this.toVenueMarket(row, onchain);
       } catch (error) {
         throw new Error(`Unable to validate live market ${row.marketId}: ${error instanceof Error ? error.message : String(error)}`);
       }
-    }
+    })).then((validated) => validated.filter((market): market is VenueMarket => market !== null));
     return markets;
   }
 
