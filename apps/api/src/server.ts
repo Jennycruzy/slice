@@ -32,17 +32,11 @@ heartbeat.unref();
 const shutdown = async (signal: string) => {
   clearInterval(heartbeat);
   app.log.info({ signal }, "shutting down Slice");
-  const forceExit = setTimeout(() => {
-    app.log.error("Graceful shutdown exceeded 5 seconds; exiting so systemd can restart the isolated Slice service");
-    process.exit(0);
-  }, 5_000);
-  try {
-    await quoter.stop();
-    await app.close();
-    await db.end();
-  } finally {
-    clearTimeout(forceExit);
-  }
+  void quoter.stop().catch((error: unknown) => {
+    app.log.error({ error }, "Quote cleanup failed during shutdown; placed orders remain on-chain");
+  });
+  app.log.info("Exiting immediately after initiating shutdown cleanup; systemd must not wait on open browser streams");
+  process.exit(0);
 };
 
 process.once("SIGINT", () => { void shutdown("SIGINT"); });
