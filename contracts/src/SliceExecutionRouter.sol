@@ -125,11 +125,12 @@ contract SliceExecutionRouter {
             userData
         );
 
-        if (kind == BUY_YES || kind == BUY_NO) {
-            _refundCollateral(grant.owner, collateral);
-        } else {
-            _refundOutcome(grant.owner, outcomeToken, outcomeTokenId);
-        }
+        // A binary pool settles through this router because it is the caller.
+        // Return both asset classes after every route: buys receive outcome
+        // tokens and may leave collateral dust; sells receive collateral and
+        // may leave outcome tokens after a partial or rejected fill.
+        _refundCollateral(grant.owner, collateral);
+        _refundOutcome(grant.owner, outcomeToken, outcomeTokenId);
         if (!success) usedContracts[digest] = used;
         emit ChildOrderRouted(digest, grant.owner, pool, kind, quantity, success, id);
     }
