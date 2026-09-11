@@ -20,19 +20,19 @@ The same build is also served next to the API at <https://slice.54-154-121-30.ss
 
 | What to check | Where |
 | --- | --- |
-| Open the terminal, pick a market, preview a size (no wallet needed) | <https://slice-app-brown.vercel.app/trade> |
-| Every verified execution, including cancelled ones | <https://slice-app-brown.vercel.app/executions> |
-| Engine status, deployed contracts, execution path | <https://slice-app-brown.vercel.app/proof> |
-| A 333-contract scale-in: 3 children filled at 79.1¢, 70.9¢ and 63.9¢ | <https://slice.54-154-121-30.sslip.io/r/8bf6c3ae-a05c-4212-a7b8-047823da29e4> |
-| One of those child transactions on the Somnia explorer | <https://shannon-explorer.somnia.network/tx/0xb723405873d6865eb7df162d5c5e02fe229894dbc84154bd9251cded688fab5b> |
-| Live engine health as JSON | <https://slice.54-154-121-30.sslip.io/health> |
-| Reactivity firing with the Slice server stopped: this fill… | <https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070> |
-| …triggered this handler transaction on its own | <https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790> |
-| A receipt produced through the CCXT surface | <https://slice.54-154-121-30.sslip.io/r/e4317259-80bb-4a2a-bb66-4906cd6147e6> |
-| A receipt produced by an agent through MCP | <https://slice.54-154-121-30.sslip.io/r/dd39958f-0c4c-4339-9941-968c9aeb905b> |
-| Session policy contract (checks every grant) | <https://shannon-explorer.somnia.network/address/0x09113669c5D6E4f343966bDdF893Ad8Cb1f16c5A> |
-| Execution router contract (places orders the user still owns) | <https://shannon-explorer.somnia.network/address/0xd67788012397291490A88657fB99e59b84a74A11> |
-| Reactivity exit handler (runs exits even if Slice is offline) | <https://shannon-explorer.somnia.network/address/0x3B6F62b77f98B04170354D3AA68DF8038de27B07> |
+| Open the terminal, pick a market, preview a size (no wallet needed) | [Open the terminal](https://slice-app-brown.vercel.app/trade) |
+| Every verified execution, including cancelled ones | [Executions](https://slice-app-brown.vercel.app/executions) |
+| Engine status, deployed contracts, execution path | [Proof page](https://slice-app-brown.vercel.app/proof) |
+| A 333-contract scale-in: 3 children filled at 79.1¢, 70.9¢ and 63.9¢ | [Receipt](https://slice.54-154-121-30.sslip.io/r/8bf6c3ae-a05c-4212-a7b8-047823da29e4) |
+| One of those child transactions on the Somnia explorer | [Explorer](https://shannon-explorer.somnia.network/tx/0xb723405873d6865eb7df162d5c5e02fe229894dbc84154bd9251cded688fab5b) |
+| Live engine health as JSON | [Health JSON](https://slice.54-154-121-30.sslip.io/health) |
+| Reactivity firing with the Slice server stopped: this fill… | [Fill tx](https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070) |
+| …triggered this handler transaction on its own | [Handler tx](https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790) |
+| A receipt produced through the CCXT surface | [CCXT receipt](https://slice.54-154-121-30.sslip.io/r/e4317259-80bb-4a2a-bb66-4906cd6147e6) |
+| A receipt produced by an agent through MCP | [MCP receipt](https://slice.54-154-121-30.sslip.io/r/dd39958f-0c4c-4339-9941-968c9aeb905b) |
+| Session policy contract (checks every grant) | [Session policy](https://shannon-explorer.somnia.network/address/0x09113669c5D6E4f343966bDdF893Ad8Cb1f16c5A) |
+| Execution router contract (places orders the user still owns) | [Execution router](https://shannon-explorer.somnia.network/address/0xd67788012397291490A88657fB99e59b84a74A11) |
+| Reactivity exit handler (runs exits even if Slice is offline) | [Exit handler](https://shannon-explorer.somnia.network/address/0x3B6F62b77f98B04170354D3AA68DF8038de27B07) |
 
 The site runs on Somnia Shannon (chain 50312). Executing needs a wallet on Shannon with test collateral; previewing and reading receipts need nothing.
 
