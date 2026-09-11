@@ -15,7 +15,7 @@ Captured 2026-09-09 against Somnia Shannon (`50312`). These findings are read fr
 
 The SDK and DreamDEX event-contract documentation expose `placeBinaryOrderFor(owner, kind, price, quantity, expireTimestampNs, orderType, selfMatchingOption, builder, builderFeeBpsTimes1k, userData)`. Slice uses the live pool's current executable touch, converts NO prices into the shared YES-price book, rounds to the live tick and lot grid, submits IOC orders, waits for the receipt, and records only decoded `OrderFilled` events.
 
-The first clean funded testnet run completed execution `ee9ac872-8f49-48ba-af44-28b49d3c1eb0` for a live BTC market. The child fill was recorded in transaction [`0x2fc7ea6322148b3b517c6e32510b56fbbca0e9e6119b9dd6256d1b0d7f6c4604`](https://shannon-explorer.somnia.network/tx/0x2fc7ea6322148b3b517c6e32510b56fbbca0e9e6119b9dd6256d1b0d7f6c4604). The corrected non-custodial router is [`0x359E4Ed4bC31f324771461b5659Ef786913D4C71`](https://shannon-explorer.somnia.network/address/0x359E4Ed4bC31f324771461b5659Ef786913D4C71), deployed in [`0x28bcb9e541f755403e41d93b04000f87de91481a049647f57a69dbfe29e50c64`](https://shannon-explorer.somnia.network/tx/0x28bcb9e541f755403e41d93b04000f87de91481a049647f57a69dbfe29e50c64). No private key is stored in this findings file.
+The first clean funded testnet run completed execution `ee9ac872-8f49-48ba-af44-28b49d3c1eb0` for a live BTC market. The child fill was recorded in transaction [`0x2fc7ea6322148b3b517c6e32510b56fbbca0e9e6119b9dd6256d1b0d7f6c4604`](https://shannon-explorer.somnia.network/tx/0x2fc7ea6322148b3b517c6e32510b56fbbca0e9e6119b9dd6256d1b0d7f6c4604). The non-custodial router used for that run was [`0x359E4Ed4bC31f324771461b5659Ef786913D4C71`](https://shannon-explorer.somnia.network/address/0x359E4Ed4bC31f324771461b5659Ef786913D4C71), deployed in [`0x28bcb9e541f755403e41d93b04000f87de91481a049647f57a69dbfe29e50c64`](https://shannon-explorer.somnia.network/tx/0x28bcb9e541f755403e41d93b04000f87de91481a049647f57a69dbfe29e50c64). The router has since been redeployed; the current address, `0xd67788012397291490A88657fB99e59b84a74A11`, is the one reported by `/health` and linked from the README. No private key is stored in this findings file.
 
 ## Reactivity decision and live proof
 
@@ -34,10 +34,13 @@ The server-offline gate passed on 2026-09-11. Rule registration [`0xce96334efcae
 
 Expired and revoked session grants were deliberately refused by the API with HTTP 403 before child placement. The router test suite independently covers wrong assets, revoked and expired grants, executor mismatch, cap exhaustion, partial fills, unfilled orders, and collateral refunds.
 
-## Remaining limitations
+## Known limitations
 
-- The measured evidence uses deliberately tiny testnet quantities, so raw dollar savings round to zero; no larger performance claim is made.
-- Reactivity entry has contract and live-path support, but its final autonomous trigger capture is not yet linked here.
-- The complete §7 failure-state screenshot matrix and final demo video remain release tasks.
+- The measured evidence uses deliberately tiny testnet quantities, so raw dollar savings round to zero. No larger performance claim is made until a larger execution has been run and reconciled.
+- Reactivity entry rules have contract and live-path support; the exit path is the one proven with the server offline above.
 
-Until those checks have evidence, the product is not done.
+## Future validation
+
+- Run and reconcile a demo-sized execution that crosses several book levels, so the receipt shows a non-zero measured difference.
+- Capture the autonomous trigger for a Reactivity entry rule and link it here.
+- Record the failure-state screenshot set (thin book, expired grant, engine offline, WebSocket drop) alongside the demo video.
