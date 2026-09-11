@@ -32,9 +32,18 @@ heartbeat.unref();
 const shutdown = async (signal: string) => {
   clearInterval(heartbeat);
   app.log.info({ signal }, "shutting down Slice");
-  await quoter.stop();
-  await app.close();
-  await db.end();
+  const forceExit = setTimeout(() => {
+    app.log.error("Graceful shutdown exceeded 8 seconds; exiting so systemd can restart the isolated Slice service");
+    process.exit(0);
+  }, 8_000);
+  forceExit.unref();
+  try {
+    await quoter.stop();
+    await app.close();
+    await db.end();
+  } finally {
+    clearTimeout(forceExit);
+  }
 };
 
 process.once("SIGINT", () => { void shutdown("SIGINT"); });
