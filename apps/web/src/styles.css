@@ -56,6 +56,7 @@ input, select { border: 1px solid var(--line-strong); border-radius: 2px; backgr
 .strategy strong { color: var(--text); font-weight: 600; }
 .strategy span { font-size: 13px; line-height: 1.35; }
 .text-button { border: 0; background: transparent; color: var(--muted); padding: 16px 0 0; text-decoration: underline; font-size: 13px; }
+.advanced-controls { display: grid; gap: 14px; margin-top: 18px; max-width: 760px; }
 .inline-note, .projection-note, .source-note, .empty-state, .empty-panel p, .wallet-bar p { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .action-row { justify-content: flex-start; margin: 26px 0; flex-wrap: wrap; }
 .primary-button, .secondary-button { border: 1px solid var(--line-strong); border-radius: 2px; padding: 12px 16px; text-decoration: none; }

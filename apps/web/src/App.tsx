@@ -221,6 +221,13 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isoOrUndefined(value: string): string | undefined {
+  if (value.trim() === "") return undefined;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) throw new Error("Use a valid execution window date and time");
+  return parsed.toISOString();
+}
+
 function strategyLabel(strategy: StrategyName): string {
   return strategy === "iceberg" ? "Hide my size" : "Scale in";
 }
@@ -358,8 +365,25 @@ function BeforeState({
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
+  const [displayQuantity, setDisplayQuantity] = useState("");
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
   const canUseEngine = health?.status === "ok" && health.executorConfigured && health.sessionPolicyAddress !== null && health.executionRouterAddress !== null;
   const validQuantity = /^\d+(?:\.\d+)?$/.test(quantity) && Number(quantity) > 0;
+  const validDisplayQuantity = displayQuantity.trim() === "" || (/^\d+(?:\.\d+)?$/.test(displayQuantity) && Number(displayQuantity) > 0);
+
+  function executionControls() {
+    if (!validDisplayQuantity) throw new Error("Visible slice must be a positive contract size");
+    const start = isoOrUndefined(windowStart);
+    const end = isoOrUndefined(windowEnd);
+    if ((start === undefined) !== (end === undefined)) throw new Error("Set both window start and window end, or leave both blank");
+    if (start !== undefined && end !== undefined && Date.parse(end) <= Date.parse(start)) throw new Error("Execution window end must be after its start");
+    return {
+      ...(displayQuantity.trim() === "" ? {} : { displayQuantity }),
+      ...(start === undefined ? {} : { windowStart: start }),
+      ...(end === undefined ? {} : { windowEnd: end }),
+    };
+  }
 
   async function requestPreview() {
     if (selected === null || !validQuantity) {
@@ -368,9 +392,10 @@ function BeforeState({
     }
     setPreviewing(true);
     try {
+      const controls = executionControls();
       const previewMarket = async (market: MarketSummary) => api<ImpactPreview>("/api/preview-impact", {
         method: "POST",
-        body: JSON.stringify({ marketId: market.id, outcome, side, quantity, strategy }),
+        body: JSON.stringify({ marketId: market.id, outcome, side, quantity, strategy, ...controls }),
       });
       let next: ImpactPreview;
       try {
@@ -491,7 +516,7 @@ function BeforeState({
       const verified = await api<{ digest: Hex; registrationHash: Hex | null }>("/api/session/grants/verify", { method: "POST", body: JSON.stringify({ grant, quantity }) });
       const execution = await api<PublicExecution>("/api/executions", {
         method: "POST",
-        body: JSON.stringify({ owner: address, marketId: selected.id, outcome, side, quantity, strategy, sessionGrant: grant }),
+        body: JSON.stringify({ owner: address, marketId: selected.id, outcome, side, quantity, strategy, ...executionControls(), sessionGrant: grant }),
       });
       onStarted(execution, verified.digest, grant, verified.registrationHash);
     } catch (error) {
@@ -517,7 +542,14 @@ function BeforeState({
         <div className="control-line"><div className="segmented" aria-label="Outcome">{(["YES", "NO"] as const).map((item) => <button key={item} className={outcome === item ? "selected" : ""} onClick={() => { setOutcome(item); setPreview(null); }}>{item}</button>)}</div><div className="segmented" aria-label="Side">{(["buy", "sell"] as const).map((item) => <button key={item} className={side === item ? "selected" : ""} onClick={() => { setSide(item); setPreview(null); }}>{item}</button>)}</div></div>
         <div className="strategy-grid" aria-label="Execution strategy"><button className={strategy === "iceberg" ? "strategy selected" : "strategy"} onClick={() => { setStrategy("iceberg"); setPreview(null); }}><strong>Hide my size</strong><span>Show only the slice the book can see.</span></button><button className={strategy === "scale-in" ? "strategy selected" : "strategy"} onClick={() => { setStrategy("scale-in"); setPreview(null); }}><strong>Scale in</strong><span>Spread tranches across the live window.</span></button></div>
         <button className="text-button" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "Hide advanced controls" : "Show advanced controls"}</button>
-        {advanced && <p className="inline-note">Slice derives the default display size from the current executable level. The schedule window follows the market's on-chain expiry unless you provide a custom window through the API.</p>}
+        {advanced && <div className="advanced-controls">
+          <label>Visible slice<input inputMode="decimal" value={displayQuantity} onChange={(event) => { setDisplayQuantity(event.target.value); setPreview(null); }} placeholder="Use live touch size" /></label>
+          {strategy === "scale-in" && <>
+            <label>Window start<input type="datetime-local" value={windowStart} onChange={(event) => { setWindowStart(event.target.value); setPreview(null); }} /></label>
+            <label>Window end<input type="datetime-local" value={windowEnd} onChange={(event) => { setWindowEnd(event.target.value); setPreview(null); }} /></label>
+          </>}
+          <p className="inline-note">Leave visible slice blank to derive it from current live depth. Leave the scale-in window blank to use the market's live trading window.</p>
+        </div>}
         <div className="action-row"><button className="primary-button" onClick={() => void requestPreview()} disabled={previewing}>{previewing ? "Reading live book…" : "Preview impact"}</button>{preview && <button className="secondary-button" onClick={() => void startExecution()} disabled={busy || signing}>{busy || signing ? "Authorising…" : canUseEngine ? "Start Slice" : "Execution unavailable"}</button>}</div>
         {preview && <ImpactBlock preview={preview} decimals={selected?.decimals ?? 0} />}
         {preview && selected && <SnapshotLadder snapshot={preview.snapshot} />}
