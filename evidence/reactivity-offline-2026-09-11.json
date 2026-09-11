@@ -1,0 +1,21 @@
+{
+  "network": "Somnia Shannon",
+  "chainId": 50312,
+  "capturedAt": "2026-09-11T16:00:00Z",
+  "apiServiceStateDuringTrigger": "inactive",
+  "handler": "0x3B6F62b77f98B04170354D3AA68DF8038de27B07",
+  "handlerDeploymentTransaction": "0x4b4c3198d550bf4b22c4568d560879c902062542d17f1abaa3f152d9ca871911",
+  "handlerSourceVerified": true,
+  "subscriptionId": "18329865",
+  "subscriptionMode": "guaranteed",
+  "subscriptionTransaction": "0x8e3f55776b38cf0016a527658a000654de43ee2c2226dfc4daf314b4e91b89ba",
+  "ruleId": "0x9d1d3cb121f1763b6346e7b132e4067e265efd2d6b0d23d0b869171bfd1137f2",
+  "ruleRegistrationTransaction": "0xce96334efcae8ec72b2e3e47bb0cf3c239fd144bd22858320bf70c2336b4d896",
+  "sourceFillTransaction": "0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070",
+  "sourceFillBlock": "485691650",
+  "reactiveCallbackTransaction": "0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790",
+  "reactiveCallbackBlock": "485691650",
+  "ruleActiveAfterCallback": false,
+  "ruleAttemptsFailed": 0,
+  "apiHealthyAfterRestart": true
+}
