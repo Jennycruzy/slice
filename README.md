@@ -4,6 +4,10 @@
 
 > **Work size without sweeping the book.**
 
+## About
+
+Slice is built for the Somnia Event Contracts Hackathon. It is a non-custodial execution layer: you keep your wallet, sign one scoped grant, and Slice works the order through its own router while every fill stays owned by you. Exits are registered on-chain and fired by Somnia Reactivity, so they keep working even if the Slice server is down. Traders use the web terminal; scripts and agents use the same engine through REST, CCXT and MCP. Every receipt is public and links to the transactions behind it.
+
 ## The problem
 
 Event-contract order books are thin. A trader who wants real size and sends one market order walks straight through every resting level, pays a worse price on each one, and shows the whole book what they are doing. Prediction markets have order books but no execution tools, so every serious trader silently overpays on entry. Slice fixes that.
