@@ -67,10 +67,10 @@ function normalizeSubscriptionInfo(value: unknown): SubscriptionInfo {
   return value as SubscriptionInfo;
 }
 
-async function verifySubscription(subscriptionId: bigint, expectedGuaranteed?: boolean): Promise<void> {
+async function verifySubscription(subscriptionId: bigint, expectedGuaranteed?: boolean, expectedHandler = true): Promise<void> {
   const info = normalizeSubscriptionInfo(unwrap(await reactivity.getSubscriptionInfo(subscriptionId)));
   if (!info.owner || info.owner.toLowerCase() !== owner.address.toLowerCase()) throw new Error("Somnia returned a subscription owned by a different account");
-  if (info.subscriptionData.handlerContractAddress.toLowerCase() !== handlerContractAddress.toLowerCase()) throw new Error("Somnia returned a different handler address");
+  if (expectedHandler && info.subscriptionData.handlerContractAddress.toLowerCase() !== handlerContractAddress.toLowerCase()) throw new Error("Somnia returned a different handler address");
   if (info.subscriptionData.emitter.toLowerCase() !== emitter.toLowerCase()) throw new Error("Somnia returned a different event emitter");
   if (info.subscriptionData.eventTopics[0].toLowerCase() !== orderFilledTopic.toLowerCase()) throw new Error("Somnia returned a different event topic");
   if (expectedGuaranteed !== undefined && info.subscriptionData.isGuaranteed !== expectedGuaranteed) {
@@ -84,6 +84,16 @@ if (configuredSubscriptionId !== undefined && configuredSubscriptionId.trim() !=
   if (!/^\d+$/.test(configuredSubscriptionId)) throw new Error("REACTIVITY_SUBSCRIPTION_ID must be a decimal integer");
   const subscriptionId = BigInt(configuredSubscriptionId);
   await verifySubscription(subscriptionId, process.env.REACTIVITY_GUARANTEED === undefined ? undefined : guaranteed);
+  const replaceSubscriptionId = process.env.REACTIVITY_REPLACE_ID;
+  let replacedSubscriptionHash: Hex | undefined;
+  if (replaceSubscriptionId !== undefined && replaceSubscriptionId.trim() !== "") {
+    if (!/^\d+$/.test(replaceSubscriptionId)) throw new Error("REACTIVITY_REPLACE_ID must be a decimal integer");
+    const oldSubscriptionId = BigInt(replaceSubscriptionId);
+    await verifySubscription(oldSubscriptionId, undefined, false);
+    replacedSubscriptionHash = unwrap(await reactivity.unsubscribe(oldSubscriptionId));
+    const replacedReceipt = await publicClient.waitForTransactionReceipt({ hash: replacedSubscriptionHash });
+    if (replacedReceipt.status !== "success") throw new Error(`Replacement unsubscribe did not confirm: ${replacedSubscriptionHash}`);
+  }
   console.log(JSON.stringify({
     network: network.name,
     chainId: network.chainId,
@@ -92,6 +102,8 @@ if (configuredSubscriptionId !== undefined && configuredSubscriptionId.trim() !=
     emitter,
     eventTopic: orderFilledTopic,
     subscriptionId: subscriptionId.toString(),
+    replacedSubscriptionId: replaceSubscriptionId,
+    replacedSubscriptionHash,
     existing: true,
   }, (_, value) => typeof value === "bigint" ? value.toString() : value, 2));
   process.exit(0);
@@ -135,7 +147,7 @@ if (replaceSubscriptionId !== undefined && replaceSubscriptionId.trim() !== "") 
   if (!/^\d+$/.test(replaceSubscriptionId)) throw new Error("REACTIVITY_REPLACE_ID must be a decimal integer");
   const oldSubscriptionId = BigInt(replaceSubscriptionId);
   try {
-    await verifySubscription(oldSubscriptionId);
+    await verifySubscription(oldSubscriptionId, undefined, false);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!message.includes("reverted")) throw error;
