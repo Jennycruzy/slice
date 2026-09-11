@@ -150,10 +150,12 @@ export class QuotingBot {
     if (this.openQuotes.length === 0) return;
     if (this.venue.quoterWalletClient === null) throw new Error("Quoting cannot reconcile without its separate quoter wallet");
     if (this.venue.quoterPublicClient === null) throw new Error("Quoting cannot reconcile without its WebSocket public client");
+    if (this.venue.quoterAddress === null) throw new Error("Quoting cannot reconcile without its separate quoter account");
+    const quoterAddress = this.venue.quoterAddress;
     const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.quoterPublicClient });
     const remaining: Quote[] = [];
     for (const quote of this.openQuotes) {
-      const openOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, this.venue.quoterAddress);
+      const openOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, quoterAddress);
       if (!openOrderIds.some((openOrderId) => openOrderId === quote.orderId)) {
         this.log("Quote is no longer resting for the quoter account", { pool: quote.pool, orderId: quote.orderId.toString() });
         continue;
@@ -161,7 +163,7 @@ export class QuotingBot {
       try {
         await trader.cancelOrder({ pool: quote.pool, orderId: quote.orderId });
       } catch (error) {
-        const remainingOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, this.venue.quoterAddress);
+        const remainingOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(quote.pool, quoterAddress);
         if (remainingOrderIds.some((openOrderId) => openOrderId === quote.orderId)) {
           remaining.push(quote);
           throw new Error(`Quote cancel failed while the order is still live: ${error instanceof Error ? error.message : String(error)}`);
