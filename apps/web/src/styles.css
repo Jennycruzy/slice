@@ -17,7 +17,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: var(--ground); color: var(--text); }
+body { margin: 0; min-width: 320px; overflow-x: hidden; background: var(--ground); color: var(--text); }
 button, input, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
@@ -58,6 +58,7 @@ h3 { font-size: 13px; color: var(--muted); font-weight: 500; }
 .field-row { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(160px, .7fr); gap: 16px; }
 label { display: grid; gap: 8px; color: var(--muted); font-size: 12px; }
 input, select { border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface-quiet); color: var(--text); padding: 13px 14px; min-height: 48px; }
+input, select, label { min-width: 0; width: 100%; }
 .control-line, .action-row, .panel-heading, .state-heading, .receipt-heading, .wallet-bar, .child-list li, .receipt-facts div { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .control-line { justify-content: flex-start; flex-wrap: wrap; margin: 22px 0; }
 .segmented { display: inline-flex; border: 1px solid var(--line-strong); }
@@ -159,6 +160,7 @@ footer a { color: var(--muted); }
 .data-badge { border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px; letter-spacing: .06em; }
 .terminal-view { padding-top: 28px; }
 .market-header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 34px; border-bottom: 1px solid var(--line); padding: 0 0 22px; }
+.market-header > div, .terminal-grid > * { min-width: 0; }
 .market-header h1 { font-size: clamp(26px, 3vw, 36px); letter-spacing: -.035em; line-height: 1.08; margin: 6px 0; }
 .market-header p { color: var(--muted); margin: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .market-prices { display: flex; gap: 10px; }
@@ -326,9 +328,10 @@ footer a { color: var(--muted); }
   main { width: min(100% - 24px, 1200px); padding-top: 38px; }
   .field-row, .strategy-grid, .impact-block, .snapshot-grid, .working-grid, .comparison-grid, .grant-scope, .terminal-grid, .landing-hero, .proof-rail, .how-flow, .receipt-showcase, .system-grid, .deployment-grid, .integration-grid, .execution-row-metrics, .edge-detail-grid { grid-template-columns: 1fr; }
   .market-header { grid-template-columns: 1fr; gap: 16px; }
+  .market-header h1 { overflow-wrap: anywhere; }
   .market-prices { width: 100%; }
   .market-prices div { flex: 1; }
-  .market-meta { justify-items: start; grid-template-columns: repeat(3,auto); }
+  .market-meta { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 12px 18px; }
   .terminal-grid .book-panel { min-height: 0; order: 2; }
   .execution-ticket { position: static; order: 1; }
   .book-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }

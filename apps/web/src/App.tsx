@@ -123,7 +123,7 @@ interface Health {
   reactivityHandlerAddress: Address | null;
   reactivityEmitterAddress: Address | null;
   reactivitySubscriptionId: string | null;
-  quoter?: { enabled: boolean; running: boolean; lastError: string | null; openQuotes: number };
+  quoter?: { enabled: boolean; running: boolean; lastError: string | null; openQuotes: number; lastMarketId?: string | null };
   lastHeartbeatAt: string;
 }
 
@@ -916,6 +916,11 @@ export default function App() {
       }
       if (healthResult.status === "fulfilled") {
         setHealth(healthResult.value);
+        const quotedMarketId = healthResult.value.quoter?.lastMarketId;
+        if (marketResult.status === "fulfilled" && quotedMarketId) {
+          const quotedMarket = marketResult.value.markets.find((market) => market.id.toLowerCase() === quotedMarketId.toLowerCase());
+          if (quotedMarket) setSelected(quotedMarket);
+        }
       } else {
         setError(errorText(healthResult.reason));
       }
