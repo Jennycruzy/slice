@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "installCommand": "npm ci --include=dev --workspaces --include-workspace-root",
+  "installCommand": "npm ci --include=dev --workspace @slice/web --workspace @slice/core --include-workspace-root",
   "buildCommand": "npm run build --workspace @slice/web",
   "outputDirectory": "apps/web/dist"
 }
