@@ -26,6 +26,7 @@ import {
   parseUnits,
   publicActions,
   toBytes,
+  webSocket,
   zeroAddress,
   type Address,
   type Block,
@@ -189,6 +190,7 @@ export class DreamDexVenue {
   readonly walletClient: WalletClient | null;
   readonly executorAddress: Address | null;
   readonly quoterWalletClient: WalletClient | null;
+  readonly quoterPublicClient: PublicClient | null;
   readonly quoterAddress: Address | null;
   readonly executionRouterAddress: Address | null;
   readonly config: VenueConfig;
@@ -222,9 +224,11 @@ export class DreamDexVenue {
       }
       this.quoterAddress = account.address;
       this.quoterWalletClient = createWalletClient({ account, chain, transport: http(env.rpcUrl) }).extend(publicActions);
+      this.quoterPublicClient = createPublicClient({ chain, transport: webSocket(env.wsRpcUrl) });
     } else {
       this.quoterAddress = null;
       this.quoterWalletClient = null;
+      this.quoterPublicClient = null;
     }
     this.executionRouterAddress = env.executionRouterAddress;
     this.config = {

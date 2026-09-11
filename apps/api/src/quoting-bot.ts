@@ -100,7 +100,8 @@ export class QuotingBot {
     if (bestBid !== null && ask <= bestBid) ask = ceilToGrid(bestBid + grid.tickSize, grid.tickSize);
     if (bid <= 0n || ask >= oneCollateral || bid >= ask) throw new Error("The live price and configured spread cannot form a bounded two-sided quote");
 
-    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.publicClient, decimals });
+    if (this.venue.quoterPublicClient === null) throw new Error("Quoting requires a WebSocket public client for receipt confirmation");
+    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.quoterPublicClient, decimals });
     if (this.seededMarketId !== market.row.marketId) {
       const seed = await trader.mintSet({ pool: market.onchain.pool, collateral: market.onchain.collateral, amount: quantity, autoApprove: true });
       this.seededMarketId = market.row.marketId;
@@ -139,7 +140,8 @@ export class QuotingBot {
   private async cancelQuotes(): Promise<void> {
     if (this.openQuotes.length === 0) return;
     if (this.venue.quoterWalletClient === null) throw new Error("Quoting cannot reconcile without its separate quoter wallet");
-    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.publicClient });
+    if (this.venue.quoterPublicClient === null) throw new Error("Quoting cannot reconcile without its WebSocket public client");
+    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.quoterPublicClient });
     const remaining: Quote[] = [];
     for (const quote of this.openQuotes) {
       try {
