@@ -45,6 +45,51 @@ const options = {
   gasLimit: feeOption("REACTIVITY_GAS_LIMIT", DEFAULT_SUBSCRIPTION_OPTIONS.gasLimit),
 };
 
+type SubscriptionInfo = {
+  subscriptionData: {
+    eventTopics: Hex[];
+    emitter: Address;
+    handlerContractAddress: Address;
+  };
+  owner: Address;
+};
+
+function normalizeSubscriptionInfo(value: unknown): SubscriptionInfo {
+  if (Array.isArray(value)) {
+    return {
+      subscriptionData: value[0] as SubscriptionInfo["subscriptionData"],
+      owner: value[1] as Address,
+    };
+  }
+  return value as SubscriptionInfo;
+}
+
+async function verifySubscription(subscriptionId: bigint): Promise<void> {
+  const info = normalizeSubscriptionInfo(unwrap(await reactivity.getSubscriptionInfo(subscriptionId)));
+  if (!info.owner || info.owner.toLowerCase() !== owner.address.toLowerCase()) throw new Error("Somnia returned a subscription owned by a different account");
+  if (info.subscriptionData.handlerContractAddress.toLowerCase() !== handlerContractAddress.toLowerCase()) throw new Error("Somnia returned a different handler address");
+  if (info.subscriptionData.emitter.toLowerCase() !== emitter.toLowerCase()) throw new Error("Somnia returned a different event emitter");
+  if (info.subscriptionData.eventTopics[0].toLowerCase() !== orderFilledTopic.toLowerCase()) throw new Error("Somnia returned a different event topic");
+}
+
+const configuredSubscriptionId = process.env.REACTIVITY_SUBSCRIPTION_ID;
+if (configuredSubscriptionId !== undefined && configuredSubscriptionId.trim() !== "") {
+  if (!/^\d+$/.test(configuredSubscriptionId)) throw new Error("REACTIVITY_SUBSCRIPTION_ID must be a decimal integer");
+  const subscriptionId = BigInt(configuredSubscriptionId);
+  await verifySubscription(subscriptionId);
+  console.log(JSON.stringify({
+    network: network.name,
+    chainId: network.chainId,
+    owner: owner.address,
+    handlerContractAddress,
+    emitter,
+    eventTopic: orderFilledTopic,
+    subscriptionId: subscriptionId.toString(),
+    existing: true,
+  }, (_, value) => typeof value === "bigint" ? value.toString() : value, 2));
+  process.exit(0);
+}
+
 const subscriptionHash = unwrap(await reactivity.subscribe({
   handlerContractAddress,
   filter: { emitter, eventTopics: [orderFilledTopic] },
@@ -60,11 +105,7 @@ const created = parseEventLogs({
 })[0];
 if (created === undefined) throw new Error(`Subscription confirmed without a SubscriptionCreated event: ${subscriptionHash}`);
 const subscriptionId = created.args.subscriptionId;
-const info = unwrap(await reactivity.getSubscriptionInfo(subscriptionId));
-if (info.owner.toLowerCase() !== owner.address.toLowerCase()) throw new Error("Somnia returned a subscription owned by a different account");
-if (info.subscriptionData.handlerContractAddress.toLowerCase() !== handlerContractAddress.toLowerCase()) throw new Error("Somnia returned a different handler address");
-if (info.subscriptionData.emitter.toLowerCase() !== emitter.toLowerCase()) throw new Error("Somnia returned a different event emitter");
-if (info.subscriptionData.eventTopics[0].toLowerCase() !== orderFilledTopic.toLowerCase()) throw new Error("Somnia returned a different event topic");
+await verifySubscription(subscriptionId);
 
 console.log(JSON.stringify({
   network: network.name,

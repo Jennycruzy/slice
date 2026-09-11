@@ -19,6 +19,7 @@ const environmentSchema = z.object({
   MARKETS_INDEXER_URL: optionalUrl,
   EXECUTOR_PRIVATE_KEY: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{64}$/.test(value), "must be a 32-byte hex key"),
   SESSION_POLICY_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
+  EXECUTION_ROUTER_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
   REACTIVITY_HANDLER_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
   REACTIVITY_EMITTER_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
   REACTIVITY_SUBSCRIPTION_ID: optionalText,
@@ -49,6 +50,7 @@ export interface AppEnv {
   indexerUrl: string;
   executorPrivateKey: Hex | null;
   sessionPolicyAddress: `0x${string}` | null;
+  executionRouterAddress: `0x${string}` | null;
   reactivityHandlerAddress: `0x${string}` | null;
   reactivityEmitterAddress: `0x${string}` | null;
   reactivitySubscriptionId: string | null;
@@ -106,6 +108,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     indexerUrl: raw.MARKETS_INDEXER_URL ?? network.indexerUrl,
     executorPrivateKey: asHex(raw.EXECUTOR_PRIVATE_KEY),
     sessionPolicyAddress: asAddress(raw.SESSION_POLICY_ADDRESS),
+    executionRouterAddress: asAddress(raw.EXECUTION_ROUTER_ADDRESS),
     reactivityHandlerAddress: asAddress(raw.REACTIVITY_HANDLER_ADDRESS),
     reactivityEmitterAddress: asAddress(raw.REACTIVITY_EMITTER_ADDRESS),
     reactivitySubscriptionId: raw.REACTIVITY_SUBSCRIPTION_ID ?? null,

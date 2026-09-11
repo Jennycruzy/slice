@@ -17,7 +17,7 @@ import {
 import { somniaShannon } from "@somnia-chain/markets-sdk/chains";
 
 const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-const SESSION_DURATION_SECONDS = Number(import.meta.env.VITE_SESSION_DURATION_SECONDS);
+const SESSION_DURATION_SECONDS = Number(import.meta.env.VITE_SESSION_DURATION_SECONDS ?? "3600");
 const SESSION_POLICY_ABI = [{
   type: "function",
   name: "revoke",
@@ -38,6 +38,25 @@ const EXIT_HANDLER_ABI = [{
     { name: "minimumBestLevelQuantity", type: "uint256" },
     { name: "quantity", type: "uint256" },
     { name: "expireTimestampNs", type: "uint64" },
+    { name: "collateral", type: "address" },
+    { name: "outcomeToken", type: "address" },
+    { name: "outcomeTokenId", type: "uint256" },
+    {
+      name: "grant",
+      type: "tuple",
+      components: [
+        { name: "owner", type: "address" },
+        { name: "executor", type: "address" },
+        { name: "marketId", type: "bytes32" },
+        { name: "outcome", type: "uint8" },
+        { name: "side", type: "uint8" },
+        { name: "maxContracts", type: "uint256" },
+        { name: "issuedAt", type: "uint64" },
+        { name: "expiresAt", type: "uint64" },
+        { name: "nonce", type: "uint256" },
+      ],
+    },
+    { name: "signature", type: "bytes" },
   ],
   outputs: [{ name: "ruleId", type: "bytes32" }],
 }, {
@@ -89,8 +108,10 @@ interface Health {
   chainId: number;
   executorConfigured: boolean;
   sessionPolicyConfigured: boolean;
+  executionRouterConfigured: boolean;
   executorAddress: Address | null;
   sessionPolicyAddress: Address | null;
+  executionRouterAddress: Address | null;
   explorerUrl: string;
   reactivityConfigured: boolean;
   reactivityHandlerAddress: Address | null;
@@ -128,6 +149,8 @@ interface ExecutionRequestForUi {
   marketExpiry?: string;
   marketCollateral?: Address;
   marketOutcomeToken?: Address;
+  marketYesTokenId?: string;
+  marketNoTokenId?: string;
   side: "buy" | "sell";
   quantity: string;
   strategy: StrategyName;
@@ -274,17 +297,19 @@ function SnapshotLevels({ levels }: { levels: BookLevel[] }) {
   return <table className="mini-table"><thead><tr><th>Price</th><th>Contracts</th></tr></thead><tbody>{levels.map((level) => <tr key={`${level.price}-${level.quantity}`}><td>{cents(level.price)}</td><td>{level.quantity}</td></tr>)}</tbody></table>;
 }
 
-function GrantScope({ grant, marketName }: { grant: SessionGrant; marketName: string }) {
+function GrantScope({ grant, marketName, decimals = 6 }: { grant: SessionGrant; marketName: string; decimals?: number }) {
   return <div className="grant-scope" aria-label="Session authorisation scope">
     <div><span>Market</span><strong>{marketName}</strong></div>
     <div><span>Outcome / side</span><strong>{grant.outcome} · {grant.side}</strong></div>
-    <div><span>Maximum</span><strong>{grant.maxContracts} contracts</strong></div>
+    <div><span>Maximum</span><strong>{human(grant.maxContracts, decimals)} contracts</strong></div>
     <div><span>Expires</span><strong>{new Date(grant.expiresAt * 1000).toLocaleString()}</strong></div>
   </div>;
 }
 
 function BeforeState({
   markets,
+  setMarkets,
+  marketsLoading,
   selected,
   setSelected,
   outcome,
@@ -302,6 +327,8 @@ function BeforeState({
   onError,
 }: {
   markets: MarketSummary[];
+  setMarkets: (markets: MarketSummary[]) => void;
+  marketsLoading: boolean;
   selected: MarketSummary | null;
   setSelected: (market: MarketSummary) => void;
   outcome: "YES" | "NO";
@@ -326,8 +353,9 @@ function BeforeState({
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
   const [busy, setBusy] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [advanced, setAdvanced] = useState(false);
-  const canUseEngine = health?.status === "ok" && health.executorConfigured && health.sessionPolicyAddress !== null;
+  const canUseEngine = health?.status === "ok" && health.executorConfigured && health.sessionPolicyAddress !== null && health.executionRouterAddress !== null;
   const validQuantity = /^\d+(?:\.\d+)?$/.test(quantity) && Number(quantity) > 0;
 
   async function requestPreview() {
@@ -335,31 +363,52 @@ function BeforeState({
       onError("Choose a live market and enter a positive contract size before previewing impact.");
       return;
     }
+    setPreviewing(true);
     try {
-      const next = await api<ImpactPreview>("/api/preview-impact", { method: "POST", body: JSON.stringify({ marketId: selected.id, outcome, side, quantity, strategy }) });
+      const previewMarket = async (market: MarketSummary) => api<ImpactPreview>("/api/preview-impact", {
+        method: "POST",
+        body: JSON.stringify({ marketId: market.id, outcome, side, quantity, strategy }),
+      });
+      let next: ImpactPreview;
+      try {
+        next = await previewMarket(selected);
+      } catch (error) {
+        const message = errorText(error);
+        if (!/no longer trading|too close to expiry|not present in the live venue/i.test(message)) throw error;
+        const refreshed = await api<{ markets: MarketSummary[] }>("/api/markets");
+        setMarkets(refreshed.markets);
+        const replacement = refreshed.markets[0];
+        if (replacement === undefined) throw new Error("No eligible live event market is available right now.");
+        setSelected(replacement);
+        next = await previewMarket(replacement);
+      }
       setPreview(next);
       if (!next.canSubmit) onError(next.refusalReason ?? "The live book cannot fill that size.");
     } catch (error) {
       onError(errorText(error));
+    } finally {
+      setPreviewing(false);
     }
   }
 
   async function prepareEscrow() {
     if (selected === null || address === undefined || publicClient === undefined) throw new Error("Connect a wallet before preparing the live venue escrow");
+    if (health?.executionRouterAddress === null || health?.executionRouterAddress === undefined) throw new Error("The live execution router is not configured");
+    const spender = health.executionRouterAddress;
     const maximumCollateral = parseUnits(quantity, selected.decimals);
     if (side === "buy") {
       const allowance = await publicClient.readContract({
         address: selected.collateral,
         abi: erc20WriteAbi,
         functionName: "allowance",
-        args: [address, selected.pool],
+        args: [address, spender],
       });
       if (allowance < maximumCollateral) {
         const hash = await writeContractAsync({
           address: selected.collateral,
           abi: erc20WriteAbi,
           functionName: "approve",
-          args: [selected.pool, maximumCollateral],
+          args: [spender, maximumCollateral],
         });
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") throw new Error("Collateral approval did not confirm on Somnia");
@@ -370,14 +419,14 @@ function BeforeState({
       address: selected.outcomeToken,
       abi: erc6909Abi,
       functionName: "isOperator",
-      args: [address, selected.pool],
+      args: [address, spender],
     });
     if (!operatorApproved) {
       const hash = await writeContractAsync({
         address: selected.outcomeToken,
         abi: erc6909Abi,
         functionName: "setOperator",
-        args: [selected.pool, true],
+        args: [spender, true],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Outcome-token approval did not confirm on Somnia");
@@ -385,7 +434,18 @@ function BeforeState({
   }
 
   async function startExecution() {
-    if (selected === null || preview === null || !preview.canSubmit) return;
+    if (selected === null) {
+      onError("Choose a live market before starting Slice.");
+      return;
+    }
+    if (preview === null) {
+      onError("Preview the live impact before starting Slice.");
+      return;
+    }
+    if (!preview.canSubmit) {
+      onError(preview.refusalReason ?? "The live book cannot fill that size.");
+      return;
+    }
     if (address === undefined || health?.sessionPolicyAddress === null || health?.sessionPolicyAddress === undefined || health.executorAddress === null) {
       onError("Connect a wallet and wait for the live execution engine to report its delegated executor.");
       return;
@@ -410,7 +470,7 @@ function BeforeState({
         marketId: selected.id,
         outcome,
         side,
-        maxContracts: quantity,
+        maxContracts: parseUnits(quantity, selected.decimals).toString(),
         issuedAt,
         expiresAt,
         nonce,
@@ -445,7 +505,7 @@ function BeforeState({
       <p className="product-line">Prediction markets have order books but no execution tools. Every serious trader silently overpays on entry. Slice is the first product that fixes it.</p>
       <p className="lede">A market order announces your whole position to a thin book. Slice works it in measured child orders and proves what the execution saved.</p>
     </div>
-    {markets.length === 0 ? <div className="empty-panel"><h2>No live event market returned</h2><p>Refresh when DreamDEX has an active binary market. Slice does not invent a market or a quote.</p></div> : <>
+    {marketsLoading ? <div className="empty-panel"><h2>Loading live markets…</h2><p>Slice is reading the current DreamDEX venue. The controls will be ready as soon as the live window arrives.</p></div> : markets.length === 0 ? <div className="empty-panel"><h2>No live event market returned</h2><p>Refresh when DreamDEX has an active binary market. Slice does not invent a market or a quote.</p></div> : <>
       <section className="order-panel">
         <div className="field-row">
           <label>Market<select value={selected?.id ?? ""} onChange={(event) => { const market = markets.find((item) => item.id === event.target.value); if (market) { setSelected(market); setPreview(null); } }}>{markets.map((market) => <option key={market.id} value={market.id}>{market.name}</option>)}</select></label>
@@ -455,7 +515,7 @@ function BeforeState({
         <div className="strategy-grid" aria-label="Execution strategy"><button className={strategy === "iceberg" ? "strategy selected" : "strategy"} onClick={() => { setStrategy("iceberg"); setPreview(null); }}><strong>Hide my size</strong><span>Show only the slice the book can see.</span></button><button className={strategy === "scale-in" ? "strategy selected" : "strategy"} onClick={() => { setStrategy("scale-in"); setPreview(null); }}><strong>Scale in</strong><span>Spread tranches across the live window.</span></button></div>
         <button className="text-button" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? "Hide advanced controls" : "Show advanced controls"}</button>
         {advanced && <p className="inline-note">Slice derives the default display size from the current executable level. The schedule window follows the market's on-chain expiry unless you provide a custom window through the API.</p>}
-        <div className="action-row"><button className="primary-button" onClick={() => void requestPreview()} disabled={selected === null || !validQuantity}>Preview impact</button>{preview && <button className="secondary-button" onClick={() => void startExecution()} disabled={!canUseEngine || !isConnected || busy || signing || !preview.canSubmit}>{busy || signing ? "Authorising…" : canUseEngine ? "Start Slice" : "Execution unavailable"}</button>}</div>
+        <div className="action-row"><button className="primary-button" onClick={() => void requestPreview()} disabled={previewing}>{previewing ? "Reading live book…" : "Preview impact"}</button>{preview && <button className="secondary-button" onClick={() => void startExecution()} disabled={busy || signing}>{busy || signing ? "Authorising…" : canUseEngine ? "Start Slice" : "Execution unavailable"}</button>}</div>
         {preview && <ImpactBlock preview={preview} decimals={selected?.decimals ?? 0} />}
         {preview && selected && <SnapshotLadder snapshot={preview.snapshot} />}
       </section>
@@ -496,6 +556,7 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending } = useWriteContract();
+  const { signTypedDataAsync } = useSignTypedData();
   const [kind, setKind] = useState<ExitRule["kind"]>("take-profit");
   const [triggerPrice, setTriggerPrice] = useState("");
   const [minimumQuantity, setMinimumQuantity] = useState("");
@@ -514,19 +575,23 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
       const oneCollateral = 10n ** BigInt(decimals);
       const quantity = parseUnits(execution.metrics!.filledQuantity, decimals);
       const exitSide = execution.request.side === "buy" ? "sell" : "buy";
+      if (health?.executionRouterAddress === null || health?.executionRouterAddress === undefined || health.sessionPolicyAddress === null || health.sessionPolicyAddress === undefined) {
+        throw new Error("The non-custodial exit router is not configured");
+      }
+      const router = health.executionRouterAddress;
       if (exitSide === "buy") {
         const allowance = await publicClient.readContract({
           address: execution.request.marketCollateral!,
           abi: erc20WriteAbi,
           functionName: "allowance",
-          args: [address, execution.request.marketPool!],
+          args: [address, router],
         });
         if (allowance < quantity) {
           const approvalHash = await writeContractAsync({
             address: execution.request.marketCollateral!,
             abi: erc20WriteAbi,
             functionName: "approve",
-            args: [execution.request.marketPool!, quantity],
+            args: [router, quantity],
           });
           const approvalReceipt = await publicClient.waitForTransactionReceipt({ hash: approvalHash });
           if (approvalReceipt.status !== "success") throw new Error("Exit collateral approval did not confirm on Somnia");
@@ -536,14 +601,14 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
           address: execution.request.marketOutcomeToken!,
           abi: erc6909Abi,
           functionName: "isOperator",
-          args: [address, execution.request.marketPool!],
+          args: [address, router],
         });
         if (!operatorApproved) {
           const operatorHash = await writeContractAsync({
             address: execution.request.marketOutcomeToken!,
             abi: erc6909Abi,
             functionName: "setOperator",
-            args: [execution.request.marketPool!, true],
+            args: [router, true],
           });
           const operatorReceipt = await publicClient.waitForTransactionReceipt({ hash: operatorHash });
           if (operatorReceipt.status !== "success") throw new Error("Exit outcome-token approval did not confirm on Somnia");
@@ -555,11 +620,48 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
       const rawMinimum = kind === "book-thins" ? parseUnits(minimumQuantity, decimals) : 0n;
       if (kind !== "book-thins" && (rawTrigger <= 0n || rawTrigger >= oneCollateral)) throw new Error("Trigger price must be between 0¢ and 100¢");
       if (kind === "book-thins" && rawMinimum <= 0n) throw new Error("Minimum best-level quantity must be positive");
+      const issuedAt = Math.floor(Date.now() / 1000);
+      const marketExpiry = Number(execution.request.marketExpiry!);
+      const expiresAt = Math.min(issuedAt + SESSION_DURATION_SECONDS, marketExpiry);
+      if (!Number.isFinite(expiresAt) || expiresAt <= issuedAt) throw new Error("The filled market is too close to expiry for an on-chain exit");
+      const nonceBytes = new Uint8Array(32);
+      crypto.getRandomValues(nonceBytes);
+      const nonce = BigInt(`0x${Array.from(nonceBytes, (value) => value.toString(16).padStart(2, "0")).join("")}`).toString();
+      const grantBase = {
+        owner: address,
+        executor: handler,
+        marketId: execution.request.marketId as Hex,
+        outcome: execution.request.outcome,
+        side: exitSide,
+        maxContracts: quantity.toString(),
+        issuedAt,
+        expiresAt,
+        nonce,
+      } as const;
+      const signature = await signTypedDataAsync({
+        domain: grantDomain({ chainId: health.chainId, verifyingContract: health.sessionPolicyAddress }),
+        types: SESSION_GRANT_TYPES,
+        primaryType: "ExecutionGrant",
+        message: grantMessage(grantBase),
+      });
+      const grant = {
+        owner: address,
+        executor: handler,
+        marketId: execution.request.marketId as Hex,
+        outcome: execution.request.outcome === "YES" ? 0 : 1,
+        side: exitSide === "buy" ? 0 : 1,
+        maxContracts: quantity,
+        issuedAt: BigInt(issuedAt),
+        expiresAt: BigInt(expiresAt),
+        nonce: BigInt(nonce),
+      } as const;
+      const outcomeTokenId = execution.request.outcome === "YES" ? execution.request.marketYesTokenId : execution.request.marketNoTokenId;
+      if (outcomeTokenId === undefined) throw new Error("Execution is missing its live outcome-token id");
       const hash = await writeContractAsync({
         address: handler,
         abi: EXIT_HANDLER_ABI,
         functionName: "registerRule",
-        args: [execution.request.marketPool!, exitKind, trigger, oneCollateral, rawTrigger, rawMinimum, quantity, BigInt(execution.request.marketExpiry!) * 1_000_000_000n],
+        args: [execution.request.marketPool!, exitKind, trigger, oneCollateral, rawTrigger, rawMinimum, quantity, BigInt(execution.request.marketExpiry!) * 1_000_000_000n, execution.request.marketCollateral!, execution.request.marketOutcomeToken!, BigInt(outcomeTokenId), grant, signature],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Exit rule transaction did not confirm on Somnia");
@@ -592,10 +694,11 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
 
 export default function App() {
   const [markets, setMarkets] = useState<MarketSummary[]>([]);
+  const [marketsLoading, setMarketsLoading] = useState(true);
   const [selected, setSelected] = useState<MarketSummary | null>(null);
   const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [quantity, setQuantity] = useState("");
+  const [quantity, setQuantity] = useState("0.001");
   const [strategy, setStrategy] = useState<StrategyName>("iceberg");
   const [preview, setPreview] = useState<ImpactPreview | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
@@ -611,11 +714,25 @@ export default function App() {
   const { signTypedDataAsync } = useSignTypedData();
 
   useEffect(() => {
-    void Promise.all([api<{ markets: MarketSummary[] }>("/api/markets"), api<Health>("/health")]).then(([marketResponse, healthResponse]) => {
-      setMarkets(marketResponse.markets);
-      setSelected(marketResponse.markets[0] ?? null);
-      setHealth(healthResponse);
-    }).catch((reason: unknown) => setError(errorText(reason)));
+    let cancelled = false;
+    setMarketsLoading(true);
+    void Promise.allSettled([api<{ markets: MarketSummary[] }>("/api/markets"), api<Health>("/health")]).then(([marketResult, healthResult]) => {
+      if (cancelled) return;
+      if (marketResult.status === "fulfilled") {
+        const nextMarkets = marketResult.value.markets;
+        setMarkets(nextMarkets);
+        setSelected((current) => current !== null && nextMarkets.some((market) => market.id === current.id) ? current : nextMarkets[0] ?? null);
+      } else {
+        setError(errorText(marketResult.reason));
+      }
+      if (healthResult.status === "fulfilled") {
+        setHealth(healthResult.value);
+      } else {
+        setError(errorText(healthResult.reason));
+      }
+      setMarketsLoading(false);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -662,7 +779,7 @@ export default function App() {
         marketId: execution.request.marketId,
         outcome: execution.request.outcome,
         side: execution.request.side,
-        maxContracts: remaining,
+        maxContracts: parseUnits(remaining, execution.request.marketDecimals).toString(),
         issuedAt,
         expiresAt,
         nonce,
@@ -693,5 +810,5 @@ export default function App() {
 
   const selectedMarket = useMemo(() => selected, [selected]);
 
-  return <div className="app-shell"><header className="topbar"><a href="/" className="wordmark">SLICE<span>/</span></a><span className="network-tag">{health?.network ?? "Somnia Shannon"}</span><div className="topbar-copy">Execution for event markets</div></header>{error && <div className="global-error" role="alert"><strong>{error}</strong><button onClick={() => setError(null)} aria-label="Dismiss error">Dismiss</button></div>}{phase === "before" && <BeforeState markets={markets} selected={selectedMarket} setSelected={setSelected} outcome={outcome} setOutcome={setOutcome} side={side} setSide={setSide} quantity={quantity} setQuantity={setQuantity} strategy={strategy} setStrategy={setStrategy} preview={preview} setPreview={setPreview} health={health} onStarted={(next, nextDigest, nextGrant, nextRegistrationHash) => { setExecution(next); setDigest(nextDigest); setGrant(nextGrant); setRegistrationHash(nextRegistrationHash); setPhase("during"); setError(null); }} onError={setError} />}{phase === "during" && execution && <DuringState execution={execution} health={health} onCancel={() => { void api<PublicExecution>(`/api/executions/${execution.id}/cancel`, { method: "POST" }).then(setExecution).catch((reason: unknown) => setError(errorText(reason))); }} error={error} />}{phase === "after" && execution && <AfterState execution={execution} digest={digest} grant={grant} registrationHash={registrationHash} health={health} onRevoke={revoke} revokePending={revokePending} onExitRule={setExecution} onResume={() => { void resume(); }} resumePending={resumePending} />}<footer><span>Live venue data only</span><span>·</span><a href="https://app.dreamdex.io/docs/developers/event-contracts" target="_blank" rel="noreferrer">DreamDEX event-contract docs</a></footer></div>;
+  return <div className="app-shell"><header className="topbar"><a href="/" className="wordmark">SLICE<span>/</span></a><span className="network-tag">{health?.network ?? "Somnia Shannon"}</span><div className="topbar-copy">Execution for event markets</div></header>{error && <div className="global-error" role="alert"><strong>{error}</strong><button onClick={() => setError(null)} aria-label="Dismiss error">Dismiss</button></div>}{phase === "before" && <BeforeState markets={markets} setMarkets={setMarkets} marketsLoading={marketsLoading} selected={selectedMarket} setSelected={setSelected} outcome={outcome} setOutcome={setOutcome} side={side} setSide={setSide} quantity={quantity} setQuantity={setQuantity} strategy={strategy} setStrategy={setStrategy} preview={preview} setPreview={setPreview} health={health} onStarted={(next, nextDigest, nextGrant, nextRegistrationHash) => { setExecution(next); setDigest(nextDigest); setGrant(nextGrant); setRegistrationHash(nextRegistrationHash); setPhase("during"); setError(null); }} onError={setError} />}{phase === "during" && execution && <DuringState execution={execution} health={health} onCancel={() => { void api<PublicExecution>(`/api/executions/${execution.id}/cancel`, { method: "POST" }).then(setExecution).catch((reason: unknown) => setError(errorText(reason))); }} error={error} />}{phase === "after" && execution && <AfterState execution={execution} digest={digest} grant={grant} registrationHash={registrationHash} health={health} onRevoke={revoke} revokePending={revokePending} onExitRule={setExecution} onResume={() => { void resume(); }} resumePending={resumePending} />}<footer><span>Live venue data only</span><span>·</span><a href="https://app.dreamdex.io/docs/developers/event-contracts" target="_blank" rel="noreferrer">DreamDEX event-contract docs</a></footer></div>;
 }

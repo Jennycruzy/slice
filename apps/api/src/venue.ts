@@ -1,6 +1,5 @@
 import { Decimal } from "decimal.js/decimal";
 import {
-  binaryPoolWriteAbi,
   isBinaryMarket,
   ORDER_TYPE,
   ORDER_KIND,
@@ -52,6 +51,10 @@ const sessionPolicyAbi = parseAbi([
   "function ownerOf(bytes32 digest) view returns (address)",
   "function revoked(bytes32 digest) view returns (bool)",
   "function registerGrant((address owner,address executor,bytes32 marketId,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature) returns (bytes32 digest)",
+]);
+
+const executionRouterAbi = parseAbi([
+  "function executeBinaryOrder((address owner,address executor,bytes32 marketId,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature, address pool, address collateral, address outcomeToken, uint8 kind, uint256 price, uint256 quantity, uint64 expireTimestampNs, uint8 orderType, uint8 selfMatchingOption, address builder, uint96 builderFeeBpsTimes1k, uint64 userData, uint256 oneCollateral, uint256 outcomeTokenId) payable returns (bool success, uint128 id)",
 ]);
 
 const ORDER_FILLED_TOPIC = keccak256(toBytes("OrderFilled(uint128,uint128,uint256,uint256,uint256,uint256)"));
@@ -185,6 +188,7 @@ export class DreamDexVenue {
   readonly publicClient: PublicClient;
   readonly walletClient: WalletClient | null;
   readonly executorAddress: Address | null;
+  readonly executionRouterAddress: Address | null;
   readonly config: VenueConfig;
   private readonly chain: typeof somniaMainnet | typeof somniaShannon;
   private readonly env: AppEnv;
@@ -209,6 +213,7 @@ export class DreamDexVenue {
       this.executorAddress = null;
       this.walletClient = null;
     }
+    this.executionRouterAddress = env.executionRouterAddress;
     this.config = {
       maxBookLevels: env.slice.maxBookLevels,
       minExpiryHeadroomSeconds: env.slice.minExpiryHeadroomSeconds,
@@ -219,11 +224,13 @@ export class DreamDexVenue {
   async listLiveMarkets(): Promise<VenueMarket[]> {
     const rows = await this.exchange.client.listLiveBinaryMarkets({ limit: this.config.maxBookLevels });
     const markets: VenueMarket[] = [];
+    const expiryCutoff = BigInt(Math.floor(Date.now() / 1000) + this.config.minExpiryHeadroomSeconds);
     for (const row of rows) {
       if (!isBinaryMarket(row)) continue;
       try {
         const onchain = await this.exchange.client.getMarketOnchain(row.marketId as Hex);
         if (onchain.status !== 1) continue;
+        if (onchain.expiry < expiryCutoff) continue;
         markets.push(this.toVenueMarket(row, onchain));
       } catch (error) {
         throw new Error(`Unable to validate live market ${row.marketId}: ${error instanceof Error ? error.message : String(error)}`);
@@ -297,8 +304,9 @@ export class DreamDexVenue {
     });
   }
 
-  async placeChild(params: { market: VenueMarket; owner: Address; outcome: "YES" | "NO"; side: TradeSide; quantity: string; sequence: number }): Promise<PlacedChild> {
+  async placeChild(params: { market: VenueMarket; owner: Address; outcome: "YES" | "NO"; side: TradeSide; quantity: string; sequence: number; sessionGrant: SessionGrant }): Promise<PlacedChild> {
     if (this.walletClient === null || this.executorAddress === null) throw new Error("Slice execution is not configured with a delegated executor key");
+    if (this.executionRouterAddress === null) throw new Error("Slice execution is not configured with the non-custodial binary execution router");
     const current = await this.readBook(params.market, params.outcome);
     const level = params.side === "buy" ? current.book.asks[0] : current.book.bids[0];
     if (level === undefined) throw new Error("Book has no executable liquidity at the current touch");
@@ -312,13 +320,30 @@ export class DreamDexVenue {
     const nowSeconds = Math.floor(Date.now() / 1000);
     const expirySeconds = Math.min(nowSeconds + this.config.childOrderExpirySeconds, Number(params.market.onchain.expiry));
     if (expirySeconds <= nowSeconds) throw new Error("The market expired before this child order could be placed");
+    const kind = ORDER_KIND[orderSideForOutcome(params.outcome, params.side)];
+    const tokenId = params.outcome === "YES" ? params.market.onchain.yesId : params.market.onchain.noId;
+    const grant = {
+      owner: params.sessionGrant.owner,
+      executor: params.sessionGrant.executor,
+      marketId: params.sessionGrant.marketId as Hex,
+      outcome: params.sessionGrant.outcome === "YES" ? 0 : 1,
+      side: params.sessionGrant.side === "buy" ? 0 : 1,
+      maxContracts: BigInt(params.sessionGrant.maxContracts),
+      issuedAt: BigInt(params.sessionGrant.issuedAt),
+      expiresAt: BigInt(params.sessionGrant.expiresAt),
+      nonce: BigInt(params.sessionGrant.nonce),
+    } as const;
     const hash = await this.walletClient.writeContract({
-      address: params.market.onchain.pool,
-      abi: binaryPoolWriteAbi,
-      functionName: "placeBinaryOrderFor",
+      address: this.executionRouterAddress,
+      abi: executionRouterAbi,
+      functionName: "executeBinaryOrder",
       args: [
-        params.owner,
-        ORDER_KIND[orderSideForOutcome(params.outcome, params.side)],
+        grant,
+        params.sessionGrant.signature,
+        params.market.onchain.pool,
+        params.market.onchain.collateral,
+        params.market.onchain.outcomeToken,
+        kind,
         rawYesPrice,
         requestedRaw,
         BigInt(expirySeconds) * NANOSECONDS_PER_SECOND,
@@ -327,8 +352,10 @@ export class DreamDexVenue {
         zeroAddress,
         0n,
         BigInt(params.sequence),
+        10n ** BigInt(decimals),
+        tokenId,
       ],
-      account: this.executorAddress,
+      account: this.walletClient.account!,
       chain: this.chain,
     });
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
@@ -415,7 +442,7 @@ export class DreamDexVenue {
         expiresAt: BigInt(grant.expiresAt),
         nonce: BigInt(grant.nonce),
       }, grant.signature],
-      account: this.executorAddress,
+      account: this.walletClient.account!,
       chain: this.chain,
     });
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });

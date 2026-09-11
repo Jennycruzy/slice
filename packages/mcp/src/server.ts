@@ -14,7 +14,7 @@ const grant = z.object({
   marketId,
   outcome: z.enum(["YES", "NO"]),
   side: z.enum(["buy", "sell"]),
-  maxContracts: quantity,
+  maxContracts: z.string().regex(/^\d+$/),
   issuedAt: z.number().int(),
   expiresAt: z.number().int(),
   nonce: z.string().regex(/^\d+$/),

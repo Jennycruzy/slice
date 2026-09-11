@@ -72,7 +72,7 @@ export class PostgresStore {
       CREATE TABLE IF NOT EXISTS session_grants (
         grant_id TEXT PRIMARY KEY,
         digest TEXT UNIQUE NOT NULL,
-        grant JSONB NOT NULL,
+        grant_payload JSONB NOT NULL,
         consumed_contracts NUMERIC NOT NULL DEFAULT 0,
         revoked_at TIMESTAMPTZ
       );
@@ -172,8 +172,8 @@ export class PostgresStore {
 
   async saveGrant(grant: GrantRecord): Promise<void> {
     await this.pool.query(
-      `INSERT INTO session_grants (grant_id, digest, grant) VALUES ($1, $2, $3::jsonb)
-       ON CONFLICT (grant_id) DO UPDATE SET grant = EXCLUDED.grant, digest = EXCLUDED.digest`,
+      `INSERT INTO session_grants (grant_id, digest, grant_payload) VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (grant_id) DO UPDATE SET grant_payload = EXCLUDED.grant_payload, digest = EXCLUDED.digest`,
       [grant.grantId, grant.digest, JSON.stringify(grant)],
     );
   }
@@ -187,7 +187,7 @@ export class PostgresStore {
       `UPDATE session_grants
        SET consumed_contracts = consumed_contracts + $2::numeric
        WHERE grant_id = $1
-         AND consumed_contracts + $2::numeric <= (grant->>'maxContracts')::numeric
+         AND consumed_contracts + $2::numeric <= (grant_payload->>'maxContracts')::numeric
        RETURNING grant_id`,
       [grantId, quantity],
     );
@@ -195,10 +195,10 @@ export class PostgresStore {
   }
 
   async getGrant(grantId: string): Promise<GrantRecord | null> {
-    const result = await this.pool.query<QueryResultRow & { grant: GrantRecord; revoked_at: Date | null }>(`SELECT grant, revoked_at FROM session_grants WHERE grant_id = $1`, [grantId]);
+    const result = await this.pool.query<QueryResultRow & { grant_payload: GrantRecord; revoked_at: Date | null }>(`SELECT grant_payload, revoked_at FROM session_grants WHERE grant_id = $1`, [grantId]);
     const row = result.rows[0];
     if (row === undefined) return null;
-    return { ...row.grant, revokedAt: row.revoked_at?.toISOString() ?? null };
+    return { ...row.grant_payload, revokedAt: row.revoked_at?.toISOString() ?? null };
   }
 
   async saveReceipt(receipt: Receipt): Promise<void> {

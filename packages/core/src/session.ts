@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js/decimal";
-import { hashTypedData, verifyTypedData, type Address, type Hex } from "viem";
+import { hashTypedData, parseUnits, verifyTypedData, type Address, type Hex } from "viem";
 import { SESSION_GRANT_DOMAIN } from "./config.js";
 import type { SessionGrant, TradeSide } from "./types.js";
 
@@ -71,13 +71,15 @@ export async function verifyGrant(grant: SessionGrant, domain: GrantDomainConfig
   return { digest, owner };
 }
 
-export function assertGrantCovers(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string; executor: Address }) {
+export function assertGrantCovers(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string; decimals: number; executor: Address }) {
   if (grant.owner.toLowerCase() !== params.owner.toLowerCase()) throw new Error("Session grant owner does not match the connected wallet");
   if (grant.executor.toLowerCase() !== params.executor.toLowerCase()) throw new Error("Session grant executor does not match the configured executor");
   if (grant.marketId.toLowerCase() !== params.marketId.toLowerCase()) throw new Error("Session grant is scoped to a different market");
   if (grant.outcome !== params.outcome) throw new Error("Session grant is scoped to a different outcome");
   if (grant.side !== params.side) throw new Error("Session grant is scoped to a different side");
   const quantity = new Decimal(params.quantity);
-  const cap = new Decimal(grant.maxContracts);
-  if (!quantity.isFinite() || quantity.lte(0) || quantity.gt(cap)) throw new Error("Order exceeds the session contract cap");
+  if (!quantity.isFinite() || quantity.lte(0)) throw new Error("Order quantity must be positive");
+  const quantityRaw = parseUnits(params.quantity, params.decimals);
+  const capRaw = BigInt(grant.maxContracts);
+  if (quantityRaw > capRaw) throw new Error("Order exceeds the session contract cap");
 }

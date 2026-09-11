@@ -28,7 +28,7 @@ const grantSchema = z.object({
   marketId: marketIdSchema,
   outcome: z.enum(["YES", "NO"]),
   side: z.enum(["buy", "sell"]),
-  maxContracts: z.string().regex(/^\d+(?:\.\d+)?$/),
+  maxContracts: z.string().regex(/^\d+$/),
   issuedAt: z.number().int(),
   expiresAt: z.number().int(),
   nonce: z.string().regex(/^\d+$/),
@@ -229,13 +229,15 @@ export async function buildApp(params: { env: AppEnv; store: PostgresStore; venu
   });
 
   app.get("/health", async (_request, reply) => reply.send({
-    status: params.engine.executorAddress !== null && params.env.sessionPolicyAddress !== null ? "ok" : "degraded",
+    status: params.engine.executorAddress !== null && params.env.sessionPolicyAddress !== null && params.env.executionRouterAddress !== null ? "ok" : "degraded",
     network: params.env.network.name,
     chainId: params.env.network.chainId,
     executorConfigured: params.engine.executorAddress !== null,
     sessionPolicyConfigured: params.env.sessionPolicyAddress !== null,
+    executionRouterConfigured: params.env.executionRouterAddress !== null,
     executorAddress: params.engine.executorAddress,
     sessionPolicyAddress: params.env.sessionPolicyAddress,
+    executionRouterAddress: params.env.executionRouterAddress,
     explorerUrl: params.env.network.explorerUrl,
     reactivityConfigured: params.env.reactivityHandlerAddress !== null && params.env.reactivityEmitterAddress !== null && params.env.reactivitySubscriptionId !== null,
     reactivityHandlerAddress: params.env.reactivityHandlerAddress,

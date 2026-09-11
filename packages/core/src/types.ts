@@ -143,6 +143,8 @@ export interface ExecutionRequest {
   marketExpiry?: string;
   marketCollateral?: `0x${string}`;
   marketOutcomeToken?: `0x${string}`;
+  marketYesTokenId?: string;
+  marketNoTokenId?: string;
   side: TradeSide;
   quantity: string;
   strategy: StrategyName;

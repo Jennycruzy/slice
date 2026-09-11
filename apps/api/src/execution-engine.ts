@@ -15,7 +15,7 @@ import {
   type SessionGrant,
   type TradeSide,
 } from "@slice/core";
-import type { Address, Hex } from "viem";
+import { parseUnits, type Address, type Hex } from "viem";
 import type { AppEnv } from "./env.js";
 import { PostgresStore, type ExecutionRecord } from "./store.js";
 import { DreamDexVenue, type PlacedChild, type VenueMarket } from "./venue.js";
@@ -42,19 +42,22 @@ export class ExecutionEngine {
     this.heartbeatAt = new Date().toISOString();
   }
 
-  async authorize(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string }): Promise<{ digest: Hex; registrationHash: Hex | null }> {
+  async authorize(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string; marketDecimals?: number }): Promise<{ digest: Hex; registrationHash: Hex | null }> {
     if (this.env.sessionPolicyAddress === null) throw new Error("Session authorization is not configured on this deployment");
     if (this.venue.executorAddress === null) throw new Error("Slice execution is not configured with a delegated executor key");
+    if (this.venue.executionRouterAddress === null) throw new Error("Slice execution is not configured with the non-custodial binary execution router");
     const verified = await verifyGrant(grant, {
       chainId: this.env.network.chainId,
       verifyingContract: this.env.sessionPolicyAddress,
     });
+    const marketDecimals = params.marketDecimals ?? (await this.venue.resolveMarket(grant.marketId)).onchain.decimals;
     assertGrantCovers(grant, {
       owner: params.owner,
       marketId: params.marketId,
       outcome: params.outcome,
       side: params.side,
       quantity: params.quantity,
+      decimals: marketDecimals,
       executor: this.venue.executorAddress,
     });
     if (await this.venue.isSessionDigestRevoked(verified.digest)) throw new Error("This authorisation was revoked on-chain");
@@ -76,6 +79,7 @@ export class ExecutionEngine {
       outcome: request.outcome,
       side: request.side,
       quantity: request.quantity,
+      marketDecimals: market.onchain.decimals,
     });
     const snapshot = await this.venue.captureSnapshot({
       market,
@@ -89,7 +93,7 @@ export class ExecutionEngine {
     }
     const displayQuantity = request.displayQuantity ?? defaultDisplayQuantity(snapshot.book, request.side, request.quantity);
     if (displayQuantity === null) throw new Error("The live book has no visible depth from which to size an iceberg");
-    await this.store.reserveGrant(request.sessionGrant.grantId, request.quantity);
+    await this.store.reserveGrant(request.sessionGrant.grantId, parseUnits(request.quantity, market.onchain.decimals).toString());
     const canonicalRequest: ExecutionRequest = {
       ...request,
       marketId: market.row.marketId,
@@ -102,6 +106,8 @@ export class ExecutionEngine {
       marketExpiry: market.onchain.expiry.toString(),
       marketCollateral: market.onchain.collateral,
       marketOutcomeToken: market.onchain.outcomeToken,
+      marketYesTokenId: market.onchain.yesId.toString(),
+      marketNoTokenId: market.onchain.noId.toString(),
     };
     const execution = await this.store.createExecution(randomUUID(), canonicalRequest, snapshot);
     await this.store.setGrantDigest(canonicalRequest.sessionGrant.grantId, authorization.digest);
@@ -153,8 +159,9 @@ export class ExecutionEngine {
       outcome: execution.request.outcome,
       side: execution.request.side,
       quantity: remaining.toFixed(),
+      marketDecimals: market.onchain.decimals,
     });
-    await this.store.reserveGrant(grant.grantId, remaining.toFixed());
+    await this.store.reserveGrant(grant.grantId, parseUnits(remaining.toFixed(), market.onchain.decimals).toString());
     const request: ExecutionRequest = {
       ...execution.request,
       sessionGrant: grant,
@@ -165,6 +172,8 @@ export class ExecutionEngine {
       marketExpiry: market.onchain.expiry.toString(),
       marketCollateral: market.onchain.collateral,
       marketOutcomeToken: market.onchain.outcomeToken,
+      marketYesTokenId: market.onchain.yesId.toString(),
+      marketNoTokenId: market.onchain.noId.toString(),
     };
     await this.store.replaceRequest(executionId, request);
     await this.store.setState(executionId, "running");
@@ -296,6 +305,7 @@ export class ExecutionEngine {
           side: params.request.side,
           quantity: params.quantity,
           sequence: params.sequence + attempt,
+          sessionGrant: params.request.sessionGrant,
         });
         lastResult = result;
         const status = result.status === "filled" ? "filled" : result.status === "partial" ? "partial" : "rejected";
@@ -331,6 +341,9 @@ export class ExecutionEngine {
         const message = error instanceof Error ? error.message : String(error);
         await this.store.replaceChild(params.executionId, { ...child, status: "rejected", updatedAt: new Date().toISOString(), rejectionReason: message });
         if (/authori[sz]ation|session grant|grant/i.test(message)) throw error;
+        if (/OnlyApprovedContracts|0x3fb0ba2e|execution router|placeBinaryOrderFor/i.test(message)) {
+          throw new Error(`DreamDEX does not permit delegated binary placement: ${message}`);
+        }
         if (attempt >= this.env.slice.executionRetryLimit) throw new Error(`Venue rejected the child order after ${attempt + 1} attempts: ${message}`);
         await this.store.setState(params.executionId, "reconnecting", { failureCode: "retrying_child", failureMessage: message });
       }
@@ -355,6 +368,7 @@ export class ExecutionEngine {
       outcome: request.outcome,
       side: request.side,
       quantity: request.quantity,
+      decimals: request.marketDecimals ?? (() => { throw new Error("Execution is missing market decimals"); })(),
       executor: this.venue.executorAddress,
     });
     if (await this.venue.isSessionDigestRevoked(verified.digest)) throw new Error("Authorisation revoked. The filled portion is untouched.");
