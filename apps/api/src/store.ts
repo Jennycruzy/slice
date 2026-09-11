@@ -303,6 +303,14 @@ export class PostgresStore {
     return result.rows[0]?.payload ?? null;
   }
 
+  async listReceipts(limit: number): Promise<Receipt[]> {
+    const result = await this.pool.query<QueryResultRow & { payload: Receipt }>(
+      `SELECT payload FROM receipts ORDER BY created_at DESC LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => row.payload);
+  }
+
   private toExecution(row: ExecutionRow): ExecutionRecord {
     return {
       id: row.id,

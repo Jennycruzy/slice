@@ -202,7 +202,9 @@ function escapeHtml(value: string): string {
 
 function money(value: string | null): string {
   if (value === null) return "—";
-  return `$${new Decimal(value).toFixed(2)}`;
+  const amount = new Decimal(value);
+  const precision = !amount.isZero() && amount.abs().lessThan("0.01") ? 4 : 2;
+  return `$${amount.toFixed(precision)}`;
 }
 
 function receiptCardSvg(receipt: Awaited<ReturnType<PostgresStore["getReceipt"]>>, env: AppEnv): string {
@@ -393,6 +395,12 @@ export async function buildApp(params: { env: AppEnv; store: PostgresStore; venu
     const receipt = await params.store.getReceipt(id);
     if (receipt === null) return reply.code(404).send({ error: "Receipt not found", action: "Check the public receipt URL." });
     return reply.send(receipt);
+  });
+
+  app.get("/api/receipts", async (request, reply) => {
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) }).parse(request.query);
+    const receipts = await params.store.listReceipts(limit);
+    return reply.send({ receipts, source: "verified-somnia-fills" });
   });
 
   app.get("/r/:id", async (request, reply) => {
