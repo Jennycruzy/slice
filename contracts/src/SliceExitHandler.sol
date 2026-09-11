@@ -77,10 +77,26 @@ contract SliceExitHandler is SomniaEventHandler {
 
     bytes32 public constant ORDER_FILLED_TOPIC = keccak256("OrderFilled(uint128,uint128,uint256,uint256,uint256,uint256)");
     uint256 private constant NANOSECONDS_PER_SECOND = 1_000_000_000;
+    uint8 private constant BUY_YES = 0;
+    uint8 private constant SELL_YES = 1;
+    uint8 private constant BUY_NO = 2;
+    uint8 private constant SELL_NO = 3;
     uint8 private constant IOC_ORDER = 2;
     uint8 private constant CANCEL_TAKER = 0;
 
     mapping(bytes32 ruleId => Rule) public rules;
+    struct EntryRule {
+        address owner;
+        address pool;
+        uint8 kind;
+        uint256 oneCollateral;
+        uint256 triggerPrice;
+        uint256 quantity;
+        uint64 expireTimestampNs;
+        bool active;
+    }
+
+    mapping(bytes32 ruleId => EntryRule) public entryRules;
     struct RouteAssets {
         address collateral;
         address outcomeToken;
@@ -103,10 +119,14 @@ contract SliceExitHandler is SomniaEventHandler {
     }
 
     mapping(address pool => bytes32[] ruleIds) private poolRules;
+    mapping(address pool => bytes32[] ruleIds) private poolEntryRuleIds;
     mapping(address owner => uint256 nextNonce) private ownerNonces;
     mapping(bytes32 ruleId => RouteAssets) private ruleAssets;
     mapping(bytes32 ruleId => SliceExecutionGrant) private ruleGrants;
     mapping(bytes32 ruleId => bytes) private ruleSignatures;
+    mapping(bytes32 ruleId => RouteAssets) private entryAssets;
+    mapping(bytes32 ruleId => SliceExecutionGrant) private entryGrants;
+    mapping(bytes32 ruleId => bytes) private entrySignatures;
 
     address public immutable executionRouter;
     address public immutable sessionPolicy;
@@ -124,6 +144,9 @@ contract SliceExitHandler is SomniaEventHandler {
     event RuleTriggered(bytes32 indexed ruleId, uint128 indexed fillTakerOrderId, uint256 observedPrice, uint128 exitOrderId);
     event RuleAttemptFailed(bytes32 indexed ruleId, uint128 indexed fillTakerOrderId, uint256 observedPrice);
     event RuleCancelled(bytes32 indexed ruleId, address indexed owner);
+    event EntryRegistered(bytes32 indexed ruleId, address indexed owner, address indexed pool, uint8 kind, uint256 triggerPrice, uint256 quantity);
+    event EntryTriggered(bytes32 indexed ruleId, uint128 indexed fillTakerOrderId, uint256 observedPrice, uint128 entryOrderId);
+    event EntryAttemptFailed(bytes32 indexed ruleId, uint128 indexed fillTakerOrderId, uint256 observedPrice);
 
     function registerRule(
         address pool,
@@ -183,6 +206,58 @@ contract SliceExitHandler is SomniaEventHandler {
         return poolRules[pool];
     }
 
+    function getPoolEntryRuleIds(address pool) external view returns (bytes32[] memory) {
+        return poolEntryRuleIds[pool];
+    }
+
+    /// @notice Register a one-shot entry that fires from a live fill event on the same pool.
+    /// @dev The trigger is evaluated against the outcome price derived from the YES-price book.
+    ///      The owner keeps custody: the router pulls only the assets needed for the IOC order.
+    function registerEntryRule(
+        address pool,
+        uint8 kind,
+        uint256 oneCollateral,
+        uint256 triggerPrice,
+        uint256 quantity,
+        uint64 expireTimestampNs,
+        address collateral,
+        address outcomeToken,
+        uint256 outcomeTokenId,
+        SliceExecutionGrant calldata grant,
+        bytes calldata signature
+    ) external returns (bytes32 ruleId) {
+        if (pool == address(0) || collateral == address(0) || outcomeToken == address(0) || kind > 3 || oneCollateral == 0 || triggerPrice == 0 || triggerPrice >= oneCollateral || quantity == 0 || expireTimestampNs <= block.timestamp * NANOSECONDS_PER_SECOND) revert InvalidRule();
+        if (grant.owner != msg.sender || grant.executor != address(this) || grant.marketId == bytes32(0) || grant.pool != pool || grant.collateral != collateral || grant.outcomeToken != outcomeToken || grant.outcomeTokenId != outcomeTokenId || grant.oneCollateral != oneCollateral || grant.maxContracts < quantity || grant.expiresAt <= block.timestamp) revert InvalidRule();
+        uint8 expectedOutcome = kind >= BUY_NO ? 1 : 0;
+        uint8 expectedSide = kind == SELL_YES || kind == SELL_NO ? 1 : 0;
+        if (grant.outcome != expectedOutcome || grant.side != expectedSide) revert InvalidRule();
+        ISliceSessionPolicy(sessionPolicy).registerGrant(grant, signature);
+
+        uint256 nonce = ownerNonces[msg.sender]++;
+        ruleId = keccak256(abi.encodePacked(address(this), msg.sender, pool, nonce, bytes1(0x01)));
+        entryRules[ruleId] = EntryRule({
+            owner: msg.sender,
+            pool: pool,
+            kind: kind,
+            oneCollateral: oneCollateral,
+            triggerPrice: triggerPrice,
+            quantity: quantity,
+            expireTimestampNs: expireTimestampNs,
+            active: true
+        });
+        entryAssets[ruleId] = RouteAssets({ collateral: collateral, outcomeToken: outcomeToken, outcomeTokenId: outcomeTokenId });
+        entryGrants[ruleId] = grant;
+        entrySignatures[ruleId] = signature;
+        poolEntryRuleIds[pool].push(ruleId);
+        emit EntryRegistered(ruleId, msg.sender, pool, kind, triggerPrice, quantity);
+    }
+
+    function cancelEntryRule(bytes32 ruleId) external {
+        EntryRule storage rule = entryRules[ruleId];
+        if (rule.owner != msg.sender) revert RuleOwnerOnly();
+        rule.active = false;
+    }
+
     function _onEvent(address emitter, bytes32[] calldata eventTopics, bytes calldata data) internal override {
         if (eventTopics.length == 0 || eventTopics[0] != ORDER_FILLED_TOPIC || data.length < 128) return;
         (uint256 quantityFilled, , , uint256 fillPrice) = abi.decode(data, (uint256, uint256, uint256, uint256));
@@ -190,6 +265,56 @@ contract SliceExitHandler is SomniaEventHandler {
         uint128 takerOrderId = uint128(uint256(eventTopics.length > 1 ? eventTopics[1] : bytes32(0)));
 
         _processPoolRules(emitter, quantityFilled, fillPrice, takerOrderId);
+        _processPoolEntries(emitter, fillPrice, takerOrderId);
+    }
+
+    function _processPoolEntries(address emitter, uint256 fillPrice, uint128 takerOrderId) private {
+        bytes32[] storage ids = poolEntryRuleIds[emitter];
+        for (uint256 index = 0; index < ids.length; index++) {
+            EntryRule storage rule = entryRules[ids[index]];
+            if (!rule.active || rule.expireTimestampNs <= block.timestamp * NANOSECONDS_PER_SECOND) continue;
+            uint256 observedPrice = _entryOutcomePrice(rule, fillPrice);
+            if (!_entryTriggered(rule, observedPrice)) continue;
+            _tryEntry(ids[index], rule, takerOrderId, observedPrice);
+        }
+    }
+
+    function _entryTriggered(EntryRule storage rule, uint256 observedPrice) private view returns (bool) {
+        return rule.kind == BUY_YES || rule.kind == BUY_NO ? observedPrice <= rule.triggerPrice : observedPrice >= rule.triggerPrice;
+    }
+
+    function _tryEntry(bytes32 ruleId, EntryRule storage rule, uint128 takerOrderId, uint256 observedPrice) private {
+        ISliceBinaryPool.Level[] memory levels = ISliceBinaryPool(rule.pool).getBookLevels(_isBid(rule.kind), 1);
+        if (levels.length == 0) {
+            emit EntryAttemptFailed(ruleId, takerOrderId, observedPrice);
+            return;
+        }
+        (bool success, uint128 entryOrderId) = _placeEntry(ruleId, rule, levels[0].price, uint64(uint256(ruleId)));
+        if (!success) {
+            emit EntryAttemptFailed(ruleId, takerOrderId, observedPrice);
+            return;
+        }
+        rule.active = false;
+        emit EntryTriggered(ruleId, takerOrderId, observedPrice, entryOrderId);
+    }
+
+    function _placeEntry(bytes32 ruleId, EntryRule storage rule, uint256 price, uint64 userData) private returns (bool success, uint128 entryOrderId) {
+        RouteAssets storage assets = entryAssets[ruleId];
+        ExitOrder memory order = ExitOrder({
+            grant: entryGrants[ruleId],
+            signature: entrySignatures[ruleId],
+            pool: rule.pool,
+            collateral: assets.collateral,
+            outcomeToken: assets.outcomeToken,
+            kind: rule.kind,
+            price: price,
+            quantity: rule.quantity,
+            expireTimestampNs: rule.expireTimestampNs,
+            userData: userData,
+            oneCollateral: rule.oneCollateral,
+            outcomeTokenId: assets.outcomeTokenId
+        });
+        return _callRouter(order);
     }
 
     function _processPoolRules(address emitter, uint256 quantityFilled, uint256 fillPrice, uint128 takerOrderId) private {
@@ -271,10 +396,14 @@ contract SliceExitHandler is SomniaEventHandler {
         return rule.exitKind >= 2 ? rule.oneCollateral - yesPrice : yesPrice;
     }
 
+    function _entryOutcomePrice(EntryRule storage rule, uint256 yesPrice) private view returns (uint256) {
+        return rule.kind >= BUY_NO ? rule.oneCollateral - yesPrice : yesPrice;
+    }
+
     function _isBid(uint8 kind) private pure returns (bool) {
         // BinaryPool keeps one YES-price book. YES sells consume bids; NO
         // buys also consume YES bids because a NO buy is the complement of a
         // YES sell. The other two exit kinds consume asks.
-        return kind == 1 || kind == 2;
+        return kind == SELL_YES || kind == BUY_NO;
     }
 }
