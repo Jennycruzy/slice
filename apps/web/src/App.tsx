@@ -188,7 +188,7 @@ interface FillForUi {
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }), ...(init?.headers ?? {}) },
   });
   let body: unknown;
   try {
@@ -546,7 +546,7 @@ function BeforeState({
     {marketsLoading ? <div className="empty-panel"><h2>Loading live markets…</h2><p>Slice is reading the current DreamDEX venue. The controls will be ready as soon as the live window arrives.</p></div> : markets.length === 0 ? <div className="empty-panel"><h2>No live event market returned</h2><p>Refresh when DreamDEX has an active binary market. Slice does not invent a market or a quote.</p></div> : <>
       <section className="order-panel">
         <div className="field-row">
-          <label>Market<select value={selected?.id ?? ""} onChange={(event) => { const market = markets.find((item) => item.id === event.target.value); if (market) { setSelected(market); setPreview(null); } }}>{markets.map((market) => <option key={market.id} value={market.id}>{market.name}</option>)}</select></label>
+          <label>Market<select value={selected?.id ?? ""} onChange={(event) => { const market = markets.find((item) => item.id === event.target.value); if (market) { setSelected(market); setPreview(null); } }}>{markets.map((market) => <option key={market.id} value={market.id}>{market.name} · {market.asset} · {market.interval ?? "live"}</option>)}</select></label>
           <label>Contracts<input inputMode="decimal" value={quantity} onChange={(event) => { setQuantity(event.target.value); setPreview(null); }} placeholder="Enter size" /></label>
         </div>
         <div className="control-line"><div className="segmented" aria-label="Outcome">{(["YES", "NO"] as const).map((item) => <button key={item} className={outcome === item ? "selected" : ""} onClick={() => { setOutcome(item); setPreview(null); }}>{item}</button>)}</div><div className="segmented" aria-label="Side">{(["buy", "sell"] as const).map((item) => <button key={item} className={side === item ? "selected" : ""} onClick={() => { setSide(item); setPreview(null); }}>{item}</button>)}</div></div>
