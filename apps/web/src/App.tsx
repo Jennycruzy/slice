@@ -202,8 +202,11 @@ function shortAddress(address: string | null | undefined): string {
   return address === undefined || address === null ? "—" : `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function human(value: bigint | string, decimals: number): string {
-  return formatUnits(typeof value === "bigint" ? value : BigInt(value), decimals);
+function human(value: bigint | string | number, decimals: number): string {
+  if (typeof value === "bigint") return formatUnits(value, decimals);
+  if (typeof value === "number" && !Number.isInteger(value)) return String(value);
+  if (typeof value === "string" && /[.eE]/.test(value)) return value;
+  return formatUnits(BigInt(value), decimals);
 }
 
 function cents(value: string | null): string {
