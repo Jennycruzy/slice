@@ -527,7 +527,7 @@ export async function buildApp(params: { env: AppEnv; store: PostgresStore; venu
     const market = markets.find((candidate) => candidate.row.marketId === explicitMarketId || (outcome !== undefined && ccxtSymbol(candidate, outcome) === body.symbol));
     if (market === undefined || outcome === undefined) return responseError(reply, new Error("CCXT symbol must identify a live market and outcome, for example the symbol returned by GET /ccxt/markets"), 422);
     if (paramsBody.sessionGrant.marketId.toLowerCase() !== market.row.marketId.toLowerCase() || paramsBody.sessionGrant.outcome !== outcome || paramsBody.sessionGrant.side !== body.side) {
-      return responseError(reply, new Error("CCXT session grant does not match symbol, outcome, and side"), 403);
+      return responseError(reply, new Error(`CCXT session grant mismatch: market=${paramsBody.sessionGrant.marketId} expected=${market.row.marketId}; outcome=${paramsBody.sessionGrant.outcome} expected=${outcome}; side=${paramsBody.sessionGrant.side} request=${body.side}`), 403);
     }
     const executionRequest: ExecutionRequest = {
       owner: paramsBody.sessionGrant.owner,
