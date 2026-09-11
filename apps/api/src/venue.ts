@@ -188,6 +188,8 @@ export class DreamDexVenue {
   readonly publicClient: PublicClient;
   readonly walletClient: WalletClient | null;
   readonly executorAddress: Address | null;
+  readonly quoterWalletClient: WalletClient | null;
+  readonly quoterAddress: Address | null;
   readonly executionRouterAddress: Address | null;
   readonly config: VenueConfig;
   private readonly chain: typeof somniaMainnet | typeof somniaShannon;
@@ -212,6 +214,17 @@ export class DreamDexVenue {
     } else {
       this.executorAddress = null;
       this.walletClient = null;
+    }
+    if (env.quoterPrivateKey !== null) {
+      const account = privateKeyToAccount(env.quoterPrivateKey);
+      if (this.executorAddress !== null && account.address.toLowerCase() === this.executorAddress.toLowerCase()) {
+        throw new Error("The quoter key must resolve to a different account than the delegated executor key");
+      }
+      this.quoterAddress = account.address;
+      this.quoterWalletClient = createWalletClient({ account, chain, transport: http(env.rpcUrl) }).extend(publicActions);
+    } else {
+      this.quoterAddress = null;
+      this.quoterWalletClient = null;
     }
     this.executionRouterAddress = env.executionRouterAddress;
     this.config = {

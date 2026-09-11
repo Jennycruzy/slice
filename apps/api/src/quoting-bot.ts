@@ -45,6 +45,8 @@ export class QuotingBot {
     return {
       enabled: this.env.quoter.enabled,
       running: this.running,
+      accountConfigured: this.venue.quoterAddress !== null,
+      quoterAddress: this.venue.quoterAddress,
       lastError: this.lastError,
       lastRunAt: this.lastRunAt,
       lastMarketId: this.lastMarketId,
@@ -77,7 +79,7 @@ export class QuotingBot {
   }
 
   private async requote(): Promise<void> {
-    if (this.venue.walletClient === null || this.venue.executorAddress === null) throw new Error("Quoting requires the configured delegated executor account");
+    if (this.venue.quoterWalletClient === null || this.venue.quoterAddress === null) throw new Error("Quoting requires a separate configured quoter account");
     if (this.env.quoter.quantity === null || this.env.quoter.spreadTicks === null || this.env.quoter.refreshSeconds === null) throw new Error("Quoting requires quantity, spread ticks, and refresh interval configuration");
     const market = await this.selectMarket();
     const { book } = await this.venue.readBook(market, this.env.quoter.outcome);
@@ -98,7 +100,7 @@ export class QuotingBot {
     if (bestBid !== null && ask <= bestBid) ask = ceilToGrid(bestBid + grid.tickSize, grid.tickSize);
     if (bid <= 0n || ask >= oneCollateral || bid >= ask) throw new Error("The live price and configured spread cannot form a bounded two-sided quote");
 
-    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.walletClient, publicClient: this.venue.publicClient, decimals });
+    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.publicClient, decimals });
     if (this.seededMarketId !== market.row.marketId) {
       const seed = await trader.mintSet({ pool: market.onchain.pool, collateral: market.onchain.collateral, amount: quantity, autoApprove: true });
       this.seededMarketId = market.row.marketId;
@@ -136,8 +138,8 @@ export class QuotingBot {
 
   private async cancelQuotes(): Promise<void> {
     if (this.openQuotes.length === 0) return;
-    if (this.venue.walletClient === null) throw new Error("Quoting cannot reconcile without its executor wallet");
-    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.walletClient, publicClient: this.venue.publicClient });
+    if (this.venue.quoterWalletClient === null) throw new Error("Quoting cannot reconcile without its separate quoter wallet");
+    const trader = this.venue.exchange.client.createTrader({ walletClient: this.venue.quoterWalletClient, publicClient: this.venue.publicClient });
     const remaining: Quote[] = [];
     for (const quote of this.openQuotes) {
       try {

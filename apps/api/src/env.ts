@@ -18,6 +18,7 @@ const environmentSchema = z.object({
   SOMNIA_WS_RPC_URL: optionalUrl,
   MARKETS_INDEXER_URL: optionalUrl,
   EXECUTOR_PRIVATE_KEY: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{64}$/.test(value), "must be a 32-byte hex key"),
+  QUOTER_PRIVATE_KEY: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{64}$/.test(value), "must be a 32-byte hex key"),
   SESSION_POLICY_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
   EXECUTION_ROUTER_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
   REACTIVITY_HANDLER_ADDRESS: optionalHex.refine((value) => value === undefined || /^0x[0-9a-fA-F]{40}$/.test(value), "must be an EVM address"),
@@ -49,6 +50,7 @@ export interface AppEnv {
   wsRpcUrl: string;
   indexerUrl: string;
   executorPrivateKey: Hex | null;
+  quoterPrivateKey: Hex | null;
   sessionPolicyAddress: `0x${string}` | null;
   executionRouterAddress: `0x${string}` | null;
   reactivityHandlerAddress: `0x${string}` | null;
@@ -96,6 +98,9 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   if (quoter.enabled && (quoter.quantity === null || quoter.spreadTicks === null || quoter.refreshSeconds === null)) {
     throw new Error("QUOTER_ENABLED requires QUOTER_QUANTITY, QUOTER_SPREAD_TICKS, and QUOTER_REFRESH_SECONDS");
   }
+  if (quoter.enabled && raw.QUOTER_PRIVATE_KEY === undefined) {
+    throw new Error("QUOTER_ENABLED requires a separate QUOTER_PRIVATE_KEY");
+  }
   return {
     nodeEnv: raw.NODE_ENV,
     port: raw.PORT,
@@ -107,6 +112,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     wsRpcUrl: raw.SOMNIA_WS_RPC_URL ?? network.wsRpcUrl,
     indexerUrl: raw.MARKETS_INDEXER_URL ?? network.indexerUrl,
     executorPrivateKey: asHex(raw.EXECUTOR_PRIVATE_KEY),
+    quoterPrivateKey: asHex(raw.QUOTER_PRIVATE_KEY),
     sessionPolicyAddress: asAddress(raw.SESSION_POLICY_ADDRESS),
     executionRouterAddress: asAddress(raw.EXECUTION_ROUTER_ADDRESS),
     reactivityHandlerAddress: asAddress(raw.REACTIVITY_HANDLER_ADDRESS),
