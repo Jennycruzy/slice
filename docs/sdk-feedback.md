@@ -8,7 +8,7 @@ Notes from building Slice against the live Shannon testnet, 9–11 September 202
 2. **The indexer and the chain can disagree on whether a market is trading.** Discovery through the GraphQL indexer is fine, but every write must be gated on the on-chain status. A one-line warning in the SDK reference would save a wasted rejected transaction.
 3. **`placeBinaryOrderFor` is allow-listed.** Third-party non-custodial execution therefore needs its own router contract that calls the public placement function. Documenting the allow-list, and how to apply for it, would remove a whole contract from most integrations.
 4. **Empty books are common on testnet.** The SDK returns them correctly, but an example showing how to distinguish "no depth" from "not loaded yet" would help; several early UI bugs came from treating the two the same.
-5. **Grid parameters (tick, lot, minimum) are exposed but easy to miss.** A helper that rounds a price and quantity to the live grid in one call would prevent silent rejections.
+5. **Grid parameters (tick, lot, minimum) are exposed but easy to miss.** A helper that rounds a price and quantity to the live grid in one call would prevent rejections. Slice's own scale-in split 500 into 166.666… per tranche; the venue rounded the first child to the lot and the 0.000666 remainder was then rejected as below minimum. The rejection itself was correct and clear; the trap is that nothing upstream warns you.
 
 ## Somnia Reactivity
 

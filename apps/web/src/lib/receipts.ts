@@ -1,12 +1,16 @@
 import type { Receipt } from "@slice/core";
 
-/** Picks the receipt that best shows what Slice does: completed first, then most savings, then most child orders, then newest. */
+/**
+ * Picks the receipt that best shows how Slice works: completed first, then the one with the most
+ * filled child orders, then the largest fill, then the newest. Savings are deliberately not a
+ * ranking key so the showcase cannot drift toward flattering runs.
+ */
 export function showcaseReceipt(receipts: Receipt[]): Receipt | null {
   if (receipts.length === 0) return null;
   const score = (receipt: Receipt) => [
     receipt.status === "completed" ? 1 : 0,
-    Number(receipt.metrics.netSavings ?? receipt.metrics.rawSavings ?? 0),
-    receipt.childOrders.length,
+    receipt.childOrders.filter((child) => Number(child.filledQuantity) > 0).length,
+    Number(receipt.metrics.filledQuantity),
     Date.parse(receipt.completedAt),
   ];
   return [...receipts].sort((a, b) => {

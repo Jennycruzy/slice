@@ -23,6 +23,12 @@ DreamDEX emits `OrderFilled(uint128,uint128,uint256,uint256,uint256,uint256)`, w
 
 The server-offline gate passed on 2026-09-11. Rule registration [`0xce96334efcae8ec72b2e3e47bb0cf3c239fd144bd22858320bf70c2336b4d896`](https://shannon-explorer.somnia.network/tx/0xce96334efcae8ec72b2e3e47bb0cf3c239fd144bd22858320bf70c2336b4d896) created rule `0x9d1d…37f2`. With `slice-api.service` confirmed `inactive`, source fill [`0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070`](https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070) caused the autonomous callback [`0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790`](https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790). The rule became inactive and emitted no failure attempt. The API was restarted and returned healthy afterward.
 
+## Sized execution on organic depth
+
+On 2026-09-11 a 333-contract YES buy was worked as a three-tranche scale-in on the ETH 4h market (`…01a520`) against another participant's resting ask ladder (200 / 330 / 460 contracts at three prices). Owner `0x39Dd…be96`, grant registered in [`0x6de8…4f9a`](https://shannon-explorer.somnia.network/tx/0x6de89d14910c36e94dfb45b6065d19c8492f164aca805c16c6810cc3636c4f9a). Children: 111 @ 0.791 ([`0xd2d7…b997`](https://shannon-explorer.somnia.network/tx/0xd2d7d7c563250d22d6d02477d26579cae379bae417c558673cf2b79cce46b997)), 111 @ 0.709 ([`0xb723…ab5b`](https://shannon-explorer.somnia.network/tx/0xb723405873d6865eb7df162d5c5e02fe229894dbc84154bd9251cded688fab5b)), and 111 @ 0.639 ([`0x46f2…f2af`](https://shannon-explorer.somnia.network/tx/0x46f2fa1dab5afd0e806f567ebbb02b5a8390775cd9a73f3207c7d3ac55dcf2af)) after the venue rejected the first attempt in [`0x2cfc…e2ca`](https://shannon-explorer.somnia.network/tx/0x2cfce5f459811420d0c04bf26cfee43e3b591fbc41df8d1b0791fc32aab7e2ca) and the retry path recovered it. Receipt [`8bf6c3ae`](https://slice.54-154-121-30.sslip.io/r/8bf6c3ae-a05c-4212-a7b8-047823da29e4): naive 0.7946, actual 0.7130, raw savings $27.17, mid move −0.1535, drift adjustment −$51.12, net −$23.94.
+
+The preceding 500-contract attempt ([`6d9d2241`](https://slice.54-154-121-30.sslip.io/r/6d9d2241-954b-4688-84fa-43dfc4266875)) filled one child of 166.666 @ 0.73 and then ended `partial` because the engine submitted the lot-grid remainder (0.000666) as a child below the venue minimum. The engine now snaps every child to the lot grid, carries dust into the next tranche, and treats a remainder below the minimum as filled.
+
 ## Additional live execution evidence
 
 - Three-child iceberg: [`fcefedb5`](https://slice.54-154-121-30.sslip.io/r/fcefedb5-6fcf-4668-a058-a95c57973b23).
@@ -36,11 +42,11 @@ Expired and revoked session grants were deliberately refused by the API with HTT
 
 ## Known limitations
 
-- The measured evidence uses deliberately tiny testnet quantities, so raw dollar savings round to zero. No larger performance claim is made until a larger execution has been run and reconciled.
+- One sized execution exists so far, and its net saving after drift is negative. No performance claim is made from a single run; the point of the receipt is that the number is measured either way.
 - Reactivity entry rules have contract and live-path support; the exit path is the one proven with the server offline above.
 
 ## Future validation
 
-- Run and reconcile a demo-sized execution that crosses several book levels, so the receipt shows a non-zero measured difference.
+- Run more sized executions, on both sides and both strategies, so the drift-adjusted numbers can be read across many windows rather than one.
 - Capture the autonomous trigger for a Reactivity entry rule and link it here.
 - Record the failure-state screenshot set (thin book, expired grant, engine offline, WebSocket drop) alongside the demo video.
