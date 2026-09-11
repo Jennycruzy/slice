@@ -17,7 +17,7 @@
     "test": "npm run test --workspaces --if-present",
     "audit:integrity": "node scripts/audit-integrity.mjs",
     "reactivity:subscribe": "tsx scripts/create-reactivity-subscription.ts",
-    "contracts:compile": "solcjs --base-path contracts --include-path node_modules --optimize --bin --abi contracts/src/SliceSessionPolicy.sol contracts/src/SliceExitHandler.sol -o contracts/out"
+    "contracts:compile": "FOUNDRY_DISABLE_TELEMETRY=1 forge build --root contracts"
   },
   "devDependencies": {
     "@somnia-chain/reactivity": "^0.2.1",

@@ -372,24 +372,31 @@ contract SliceExitHandler is SomniaEventHandler {
     }
 
     function _callRouter(ExitOrder memory order) private returns (bool success, uint128 exitOrderId) {
-        return ISliceExecutionRouter(executionRouter).executeBinaryOrder(
-            order.grant,
-            order.signature,
-            order.pool,
-            order.collateral,
-            order.outcomeToken,
-            order.kind,
-            order.price,
-            order.quantity,
-            order.expireTimestampNs,
-            IOC_ORDER,
-            CANCEL_TAKER,
-            address(0),
-            0,
-            order.userData,
-            order.oneCollateral,
-            order.outcomeTokenId
-        );
+        try ISliceExecutionRouter(executionRouter).executeBinaryOrder(
+                order.grant,
+                order.signature,
+                order.pool,
+                order.collateral,
+                order.outcomeToken,
+                order.kind,
+                order.price,
+                order.quantity,
+                order.expireTimestampNs,
+                IOC_ORDER,
+                CANCEL_TAKER,
+                address(0),
+                0,
+                order.userData,
+                order.oneCollateral,
+                order.outcomeTokenId
+            ) returns (bool routed, uint128 orderId) {
+            return (routed, orderId);
+        } catch {
+            // The caller emits RuleAttemptFailed or EntryAttemptFailed. A stale,
+            // revoked, or underfunded rule must not revert the whole callback and
+            // prevent independent rules for the same pool from being evaluated.
+            return (false, 0);
+        }
     }
 
     function _outcomePrice(Rule storage rule, uint256 yesPrice) private view returns (uint256) {
