@@ -119,7 +119,7 @@ export class QuotingBot {
       autoApprove: true,
     });
     if (buy.orderId === undefined) throw new Error("Live venue did not return a resting bid id");
-    this.openQuotes.push({ pool: market.onchain.pool, orderId: buy.orderId });
+    await this.recordRestingQuote(market.onchain.pool, buy.orderId, "bid", buy.hash);
     const sell = await trader.placeOrder({
       pool: market.onchain.pool,
       side: outcomeSide(this.env.quoter.outcome, "sell"),
@@ -131,10 +131,19 @@ export class QuotingBot {
       autoApprove: true,
     });
     if (sell.orderId === undefined) throw new Error("Live venue did not return a resting ask id");
-    this.openQuotes.push({ pool: market.onchain.pool, orderId: sell.orderId });
+    await this.recordRestingQuote(market.onchain.pool, sell.orderId, "ask", sell.hash);
     this.lastRunAt = new Date().toISOString();
     this.lastMarketId = market.row.marketId;
     this.log("Placed bounded two-sided live quotes", { marketId: market.row.marketId, pool: market.onchain.pool, outcome: this.env.quoter.outcome, bid: bid.toString(), ask: ask.toString(), quantity: quantity.toString(), bidTransactionHash: buy.hash, askTransactionHash: sell.hash });
+  }
+
+  private async recordRestingQuote(pool: `0x${string}`, orderId: bigint, side: "bid" | "ask", hash: `0x${string}`): Promise<void> {
+    if (this.venue.quoterAddress === null) throw new Error("Quoting requires a separate configured quoter account");
+    const openOrderIds = await this.venue.exchange.client.getOwnOpenOrdersOnchain(pool, this.venue.quoterAddress);
+    if (!openOrderIds.some((openOrderId) => openOrderId === orderId)) {
+      throw new Error(`Live venue did not leave the quoter ${side} resting after transaction ${hash}`);
+    }
+    this.openQuotes.push({ pool, orderId });
   }
 
   private async cancelQuotes(): Promise<void> {
