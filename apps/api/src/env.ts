@@ -7,6 +7,8 @@ const optionalText = z.preprocess((value) => value === "" ? undefined : value, z
 const optionalHex = z.preprocess((value) => value === "" ? undefined : value, z.string().optional());
 const optionalQuantity = z.preprocess((value) => value === "" ? undefined : value, z.string().regex(/^\d+(?:\.\d+)?$/).optional());
 const optionalMarketId = z.preprocess((value) => value === "" ? undefined : value, z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional());
+// Blank lines in .env mean "not set", the same as a missing variable.
+const optionalNumber = (schema: z.ZodTypeAny) => z.preprocess((value) => value === "" ? undefined : value, schema.optional());
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -28,15 +30,15 @@ const environmentSchema = z.object({
   QUOTER_MARKET_ID: optionalMarketId,
   QUOTER_OUTCOME: z.enum(["YES", "NO"]).default("YES"),
   QUOTER_QUANTITY: optionalQuantity,
-  QUOTER_SPREAD_TICKS: z.coerce.bigint().positive().optional(),
-  QUOTER_REFRESH_SECONDS: z.coerce.number().int().positive().optional(),
-  SLICE_SCALE_IN_CURVE_POWER: z.coerce.number().positive().optional(),
-  SLICE_MAX_BOOK_LEVELS: z.coerce.number().int().positive().optional(),
-  SLICE_MIN_EXPIRY_HEADROOM_SECONDS: z.coerce.number().int().positive().optional(),
-  SLICE_CHILD_ORDER_EXPIRY_SECONDS: z.coerce.number().int().positive().optional(),
-  SLICE_EXECUTION_RETRY_LIMIT: z.coerce.number().int().nonnegative().optional(),
-  SLICE_EXECUTION_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
-  SLICE_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  QUOTER_SPREAD_TICKS: optionalNumber(z.coerce.bigint().positive()),
+  QUOTER_REFRESH_SECONDS: optionalNumber(z.coerce.number().int().positive()),
+  SLICE_SCALE_IN_CURVE_POWER: optionalNumber(z.coerce.number().positive()),
+  SLICE_MAX_BOOK_LEVELS: optionalNumber(z.coerce.number().int().positive()),
+  SLICE_MIN_EXPIRY_HEADROOM_SECONDS: optionalNumber(z.coerce.number().int().positive()),
+  SLICE_CHILD_ORDER_EXPIRY_SECONDS: optionalNumber(z.coerce.number().int().positive()),
+  SLICE_EXECUTION_RETRY_LIMIT: optionalNumber(z.coerce.number().int().nonnegative()),
+  SLICE_EXECUTION_RETRY_BASE_MS: optionalNumber(z.coerce.number().int().positive()),
+  SLICE_HEARTBEAT_INTERVAL_MS: optionalNumber(z.coerce.number().int().positive()),
 });
 
 export interface AppEnv {
