@@ -159,6 +159,11 @@ export interface SessionGrant {
   owner: `0x${string}`;
   executor: `0x${string}`;
   marketId: string;
+  marketPool: `0x${string}`;
+  marketCollateral: `0x${string}`;
+  marketOutcomeToken: `0x${string}`;
+  outcomeTokenId: string;
+  oneCollateral: string;
   outcome: "YES" | "NO";
   side: TradeSide;
   maxContracts: string;

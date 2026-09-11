@@ -50,11 +50,11 @@ const binaryOrderPlacedAbi = parseAbi([
 const sessionPolicyAbi = parseAbi([
   "function ownerOf(bytes32 digest) view returns (address)",
   "function revoked(bytes32 digest) view returns (bool)",
-  "function registerGrant((address owner,address executor,bytes32 marketId,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature) returns (bytes32 digest)",
+  "function registerGrant((address owner,address executor,bytes32 marketId,address pool,address collateral,address outcomeToken,uint256 outcomeTokenId,uint256 oneCollateral,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature) returns (bytes32 digest)",
 ]);
 
 const executionRouterAbi = parseAbi([
-  "function executeBinaryOrder((address owner,address executor,bytes32 marketId,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature, address pool, address collateral, address outcomeToken, uint8 kind, uint256 price, uint256 quantity, uint64 expireTimestampNs, uint8 orderType, uint8 selfMatchingOption, address builder, uint96 builderFeeBpsTimes1k, uint64 userData, uint256 oneCollateral, uint256 outcomeTokenId) payable returns (bool success, uint128 id)",
+  "function executeBinaryOrder((address owner,address executor,bytes32 marketId,address pool,address collateral,address outcomeToken,uint256 outcomeTokenId,uint256 oneCollateral,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce) grant, bytes signature, address pool, address collateral, address outcomeToken, uint8 kind, uint256 price, uint256 quantity, uint64 expireTimestampNs, uint8 orderType, uint8 selfMatchingOption, address builder, uint96 builderFeeBpsTimes1k, uint64 userData, uint256 oneCollateral, uint256 outcomeTokenId) payable returns (bool success, uint128 id)",
 ]);
 
 const ORDER_FILLED_TOPIC = keccak256(toBytes("OrderFilled(uint128,uint128,uint256,uint256,uint256,uint256)"));
@@ -326,6 +326,11 @@ export class DreamDexVenue {
       owner: params.sessionGrant.owner,
       executor: params.sessionGrant.executor,
       marketId: params.sessionGrant.marketId as Hex,
+      pool: params.sessionGrant.marketPool,
+      collateral: params.sessionGrant.marketCollateral,
+      outcomeToken: params.sessionGrant.marketOutcomeToken,
+      outcomeTokenId: BigInt(params.sessionGrant.outcomeTokenId),
+      oneCollateral: BigInt(params.sessionGrant.oneCollateral),
       outcome: params.sessionGrant.outcome === "YES" ? 0 : 1,
       side: params.sessionGrant.side === "buy" ? 0 : 1,
       maxContracts: BigInt(params.sessionGrant.maxContracts),
@@ -435,6 +440,11 @@ export class DreamDexVenue {
         owner: grant.owner,
         executor: grant.executor,
         marketId: grant.marketId as Hex,
+        pool: grant.marketPool,
+        collateral: grant.marketCollateral,
+        outcomeToken: grant.marketOutcomeToken,
+        outcomeTokenId: BigInt(grant.outcomeTokenId),
+        oneCollateral: BigInt(grant.oneCollateral),
         outcome: grant.outcome === "YES" ? 0 : 1,
         side: grant.side === "buy" ? 0 : 1,
         maxContracts: BigInt(grant.maxContracts),

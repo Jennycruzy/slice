@@ -42,7 +42,7 @@ export class ExecutionEngine {
     this.heartbeatAt = new Date().toISOString();
   }
 
-  async authorize(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string; marketDecimals?: number }): Promise<{ digest: Hex; registrationHash: Hex | null }> {
+  async authorize(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string }): Promise<{ digest: Hex; registrationHash: Hex | null }> {
     if (this.env.sessionPolicyAddress === null) throw new Error("Session authorization is not configured on this deployment");
     if (this.venue.executorAddress === null) throw new Error("Slice execution is not configured with a delegated executor key");
     if (this.venue.executionRouterAddress === null) throw new Error("Slice execution is not configured with the non-custodial binary execution router");
@@ -50,10 +50,17 @@ export class ExecutionEngine {
       chainId: this.env.network.chainId,
       verifyingContract: this.env.sessionPolicyAddress,
     });
-    const marketDecimals = params.marketDecimals ?? (await this.venue.resolveMarket(grant.marketId)).onchain.decimals;
+    const market = await this.venue.resolveMarket(grant.marketId);
+    const marketDecimals = market.onchain.decimals;
+    const outcomeTokenId = params.outcome === "YES" ? market.onchain.yesId : market.onchain.noId;
     assertGrantCovers(grant, {
       owner: params.owner,
       marketId: params.marketId,
+      marketPool: market.onchain.pool,
+      marketCollateral: market.onchain.collateral,
+      marketOutcomeToken: market.onchain.outcomeToken,
+      outcomeTokenId: outcomeTokenId.toString(),
+      oneCollateral: (10n ** BigInt(marketDecimals)).toString(),
       outcome: params.outcome,
       side: params.side,
       quantity: params.quantity,
@@ -79,7 +86,6 @@ export class ExecutionEngine {
       outcome: request.outcome,
       side: request.side,
       quantity: request.quantity,
-      marketDecimals: market.onchain.decimals,
     });
     const snapshot = await this.venue.captureSnapshot({
       market,
@@ -159,7 +165,6 @@ export class ExecutionEngine {
       outcome: execution.request.outcome,
       side: execution.request.side,
       quantity: remaining.toFixed(),
-      marketDecimals: market.onchain.decimals,
     });
     await this.store.reserveGrant(grant.grantId, parseUnits(remaining.toFixed(), market.onchain.decimals).toString());
     const request: ExecutionRequest = {
@@ -365,6 +370,13 @@ export class ExecutionEngine {
     assertGrantCovers(request.sessionGrant, {
       owner: request.owner,
       marketId: request.marketId,
+      marketPool: request.marketPool ?? (() => { throw new Error("Execution is missing its live market pool"); })(),
+      marketCollateral: request.marketCollateral ?? (() => { throw new Error("Execution is missing its live collateral"); })(),
+      marketOutcomeToken: request.marketOutcomeToken ?? (() => { throw new Error("Execution is missing its live outcome token"); })(),
+      outcomeTokenId: request.outcome === "YES"
+        ? request.marketYesTokenId ?? (() => { throw new Error("Execution is missing its live YES token id"); })()
+        : request.marketNoTokenId ?? (() => { throw new Error("Execution is missing its live NO token id"); })(),
+      oneCollateral: (10n ** BigInt(request.marketDecimals ?? (() => { throw new Error("Execution is missing market decimals"); })())).toString(),
       outcome: request.outcome,
       side: request.side,
       quantity: request.quantity,

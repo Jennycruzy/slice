@@ -8,6 +8,11 @@ export const SESSION_GRANT_TYPES = {
     { name: "owner", type: "address" },
     { name: "executor", type: "address" },
     { name: "marketId", type: "bytes32" },
+    { name: "pool", type: "address" },
+    { name: "collateral", type: "address" },
+    { name: "outcomeToken", type: "address" },
+    { name: "outcomeTokenId", type: "uint256" },
+    { name: "oneCollateral", type: "uint256" },
     { name: "outcome", type: "uint8" },
     { name: "side", type: "uint8" },
     { name: "maxContracts", type: "uint256" },
@@ -27,6 +32,11 @@ export function grantMessage(grant: Omit<SessionGrant, "grantId" | "signature">)
     owner: grant.owner,
     executor: grant.executor,
     marketId: grant.marketId as `0x${string}`,
+    pool: grant.marketPool,
+    collateral: grant.marketCollateral,
+    outcomeToken: grant.marketOutcomeToken,
+    outcomeTokenId: BigInt(grant.outcomeTokenId),
+    oneCollateral: BigInt(grant.oneCollateral),
     outcome: grant.outcome === "YES" ? 0 : 1,
     side: grant.side === "buy" ? 0 : 1,
     maxContracts: BigInt(grant.maxContracts),
@@ -71,10 +81,26 @@ export async function verifyGrant(grant: SessionGrant, domain: GrantDomainConfig
   return { digest, owner };
 }
 
-export function assertGrantCovers(grant: SessionGrant, params: { owner: Address; marketId: string; outcome: "YES" | "NO"; side: TradeSide; quantity: string; decimals: number; executor: Address }) {
+export function assertGrantCovers(grant: SessionGrant, params: {
+  owner: Address;
+  marketId: string;
+  marketPool: Address;
+  marketCollateral: Address;
+  marketOutcomeToken: Address;
+  outcomeTokenId: string;
+  oneCollateral: string;
+  outcome: "YES" | "NO";
+  side: TradeSide;
+  quantity: string;
+  decimals: number;
+  executor: Address;
+}) {
   if (grant.owner.toLowerCase() !== params.owner.toLowerCase()) throw new Error("Session grant owner does not match the connected wallet");
   if (grant.executor.toLowerCase() !== params.executor.toLowerCase()) throw new Error("Session grant executor does not match the configured executor");
   if (grant.marketId.toLowerCase() !== params.marketId.toLowerCase()) throw new Error("Session grant is scoped to a different market");
+  if (grant.marketPool.toLowerCase() !== params.marketPool.toLowerCase() || grant.marketCollateral.toLowerCase() !== params.marketCollateral.toLowerCase() || grant.marketOutcomeToken.toLowerCase() !== params.marketOutcomeToken.toLowerCase() || grant.outcomeTokenId !== params.outcomeTokenId || grant.oneCollateral !== params.oneCollateral) {
+    throw new Error("Session grant is bound to different live venue assets");
+  }
   if (grant.outcome !== params.outcome) throw new Error("Session grant is scoped to a different outcome");
   if (grant.side !== params.side) throw new Error("Session grant is scoped to a different side");
   const quantity = new Decimal(params.quantity);

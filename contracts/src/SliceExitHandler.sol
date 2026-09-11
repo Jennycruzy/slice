@@ -16,6 +16,11 @@ struct SliceExecutionGrant {
     address owner;
     address executor;
     bytes32 marketId;
+    address pool;
+    address collateral;
+    address outcomeToken;
+    uint256 outcomeTokenId;
+    uint256 oneCollateral;
     uint8 outcome;
     uint8 side;
     uint256 maxContracts;
@@ -138,7 +143,7 @@ contract SliceExitHandler is SomniaEventHandler {
         if (pool == address(0) || collateral == address(0) || outcomeToken == address(0) || exitKind > 3 || oneCollateral == 0 || quantity == 0 || expireTimestampNs <= block.timestamp * NANOSECONDS_PER_SECOND) revert InvalidRule();
         if (trigger != Trigger.BOOK_THINS && (triggerPrice == 0 || triggerPrice >= oneCollateral)) revert InvalidRule();
         if (trigger == Trigger.BOOK_THINS && minimumBestLevelQuantity == 0) revert InvalidRule();
-        if (grant.owner != msg.sender || grant.executor != address(this) || grant.marketId == bytes32(0) || grant.maxContracts < quantity || grant.expiresAt <= block.timestamp) revert InvalidRule();
+        if (grant.owner != msg.sender || grant.executor != address(this) || grant.marketId == bytes32(0) || grant.pool != pool || grant.collateral != collateral || grant.outcomeToken != outcomeToken || grant.outcomeTokenId != outcomeTokenId || grant.oneCollateral != oneCollateral || grant.maxContracts < quantity || grant.expiresAt <= block.timestamp) revert InvalidRule();
         uint8 expectedOutcome = exitKind >= 2 ? 1 : 0;
         uint8 expectedSide = exitKind == 1 || exitKind == 3 ? 1 : 0;
         if (grant.outcome != expectedOutcome || grant.side != expectedSide) revert InvalidRule();

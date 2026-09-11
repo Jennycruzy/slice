@@ -48,6 +48,11 @@ const EXIT_HANDLER_ABI = [{
         { name: "owner", type: "address" },
         { name: "executor", type: "address" },
         { name: "marketId", type: "bytes32" },
+        { name: "pool", type: "address" },
+        { name: "collateral", type: "address" },
+        { name: "outcomeToken", type: "address" },
+        { name: "outcomeTokenId", type: "uint256" },
+        { name: "oneCollateral", type: "uint256" },
         { name: "outcome", type: "uint8" },
         { name: "side", type: "uint8" },
         { name: "maxContracts", type: "uint256" },
@@ -496,6 +501,11 @@ function BeforeState({
         owner: address,
         executor: health.executorAddress,
         marketId: selected.id,
+        marketPool: selected.pool,
+        marketCollateral: selected.collateral,
+        marketOutcomeToken: selected.outcomeToken,
+        outcomeTokenId: (outcome === "YES" ? selected.yesTokenId : selected.noTokenId),
+        oneCollateral: (10n ** BigInt(selected.decimals)).toString(),
         outcome,
         side,
         maxContracts: parseUnits(quantity, selected.decimals).toString(),
@@ -659,6 +669,8 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
       const marketExpiry = Number(execution.request.marketExpiry!);
       const expiresAt = Math.min(issuedAt + SESSION_DURATION_SECONDS, marketExpiry);
       if (!Number.isFinite(expiresAt) || expiresAt <= issuedAt) throw new Error("The filled market is too close to expiry for an on-chain exit");
+      const outcomeTokenId = execution.request.outcome === "YES" ? execution.request.marketYesTokenId : execution.request.marketNoTokenId;
+      if (outcomeTokenId === undefined) throw new Error("Execution is missing its live outcome-token id");
       const nonceBytes = new Uint8Array(32);
       crypto.getRandomValues(nonceBytes);
       const nonce = BigInt(`0x${Array.from(nonceBytes, (value) => value.toString(16).padStart(2, "0")).join("")}`).toString();
@@ -666,6 +678,11 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
         owner: address,
         executor: handler,
         marketId: execution.request.marketId as Hex,
+        marketPool: execution.request.marketPool!,
+        marketCollateral: execution.request.marketCollateral!,
+        marketOutcomeToken: execution.request.marketOutcomeToken!,
+        outcomeTokenId,
+        oneCollateral: oneCollateral.toString(),
         outcome: execution.request.outcome,
         side: exitSide,
         maxContracts: quantity.toString(),
@@ -683,6 +700,11 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
         owner: address,
         executor: handler,
         marketId: execution.request.marketId as Hex,
+        pool: execution.request.marketPool!,
+        collateral: execution.request.marketCollateral!,
+        outcomeToken: execution.request.marketOutcomeToken!,
+        outcomeTokenId: BigInt(outcomeTokenId),
+        oneCollateral,
         outcome: execution.request.outcome === "YES" ? 0 : 1,
         side: exitSide === "buy" ? 0 : 1,
         maxContracts: quantity,
@@ -690,8 +712,6 @@ function ExitRulePanel({ execution, health, onRegistered }: { execution: PublicE
         expiresAt: BigInt(expiresAt),
         nonce: BigInt(nonce),
       } as const;
-      const outcomeTokenId = execution.request.outcome === "YES" ? execution.request.marketYesTokenId : execution.request.marketNoTokenId;
-      if (outcomeTokenId === undefined) throw new Error("Execution is missing its live outcome-token id");
       const hash = await writeContractAsync({
         address: handler,
         abi: EXIT_HANDLER_ABI,
@@ -788,7 +808,7 @@ export default function App() {
   };
 
   const resume = async () => {
-    if (execution === null || address === undefined || health?.sessionPolicyAddress === null || health?.sessionPolicyAddress === undefined || health.executorAddress === null || execution.request.marketDecimals === undefined) {
+    if (execution === null || address === undefined || health?.sessionPolicyAddress === null || health?.sessionPolicyAddress === undefined || health.executorAddress === null || execution.request.marketDecimals === undefined || execution.request.marketPool === undefined || execution.request.marketCollateral === undefined || execution.request.marketOutcomeToken === undefined) {
       setError("Connect the execution owner wallet before re-authorising");
       return;
     }
@@ -803,6 +823,8 @@ export default function App() {
       const requested = parseUnits(execution.request.quantity, execution.request.marketDecimals);
       if (requested <= filled) throw new Error("This execution has no remaining contracts");
       const remaining = formatUnits(requested - filled, execution.request.marketDecimals);
+      const outcomeTokenId = execution.request.outcome === "YES" ? execution.request.marketYesTokenId : execution.request.marketNoTokenId;
+      if (outcomeTokenId === undefined) throw new Error("Execution is missing its live outcome-token id");
       const issuedAt = Math.floor(Date.now() / 1000);
       const expiresAt = issuedAt + SESSION_DURATION_SECONDS;
       const nonceBytes = new Uint8Array(32);
@@ -812,6 +834,11 @@ export default function App() {
         owner: address,
         executor: health.executorAddress,
         marketId: execution.request.marketId,
+        marketPool: execution.request.marketPool,
+        marketCollateral: execution.request.marketCollateral,
+        marketOutcomeToken: execution.request.marketOutcomeToken,
+        outcomeTokenId,
+        oneCollateral: (10n ** BigInt(execution.request.marketDecimals)).toString(),
         outcome: execution.request.outcome,
         side: execution.request.side,
         maxContracts: parseUnits(remaining, execution.request.marketDecimals).toString(),

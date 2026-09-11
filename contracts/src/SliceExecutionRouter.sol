@@ -29,6 +29,10 @@ interface ISliceRouterBinaryPool {
     ) external payable returns (bool success, uint128 id);
 }
 
+interface ISliceRouterSessionPolicy {
+    function isActive(bytes32 digest) external view returns (bool);
+}
+
 /// @title SliceExecutionRouter
 /// @notice Owner-approved, non-custodial execution bridge for DreamDEX binary pools.
 /// @dev The venue's `placeBinaryOrderFor` route is allowlisted. This router calls
@@ -39,6 +43,11 @@ contract SliceExecutionRouter {
         address owner;
         address executor;
         bytes32 marketId;
+        address pool;
+        address collateral;
+        address outcomeToken;
+        uint256 outcomeTokenId;
+        uint256 oneCollateral;
         uint8 outcome;
         uint8 side;
         uint256 maxContracts;
@@ -48,7 +57,7 @@ contract SliceExecutionRouter {
     }
 
     bytes32 private constant DOMAIN_TYPE_HASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-    bytes32 private constant GRANT_TYPE_HASH = keccak256("ExecutionGrant(address owner,address executor,bytes32 marketId,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce)");
+    bytes32 private constant GRANT_TYPE_HASH = keccak256("ExecutionGrant(address owner,address executor,bytes32 marketId,address pool,address collateral,address outcomeToken,uint256 outcomeTokenId,uint256 oneCollateral,uint8 outcome,uint8 side,uint256 maxContracts,uint64 issuedAt,uint64 expiresAt,uint256 nonce)");
     bytes32 private constant NAME_HASH = keccak256("Slice Execution Grant");
     bytes32 private constant VERSION_HASH = keccak256("1");
     uint256 private constant SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
@@ -65,6 +74,7 @@ contract SliceExecutionRouter {
     error InvalidGrant();
     error InvalidSignature();
     error GrantExpired();
+    error GrantNotActive();
     error GrantCapExceeded();
     error InvalidOrder();
     error OutstandingBalance();
@@ -99,6 +109,7 @@ contract SliceExecutionRouter {
         if (msg.value != 0) revert InvalidOrder();
         bytes32 digest = _validateGrant(grant, signature);
         if (pool == address(0) || collateral == address(0) || outcomeToken == address(0) || quantity == 0 || oneCollateral == 0 || price == 0 || price >= oneCollateral || orderType != MARKET_ORDER) revert InvalidOrder();
+        if (grant.pool != pool || grant.collateral != collateral || grant.outcomeToken != outcomeToken || grant.outcomeTokenId != outcomeTokenId || grant.oneCollateral != oneCollateral) revert InvalidOrder();
         if (kind > SELL_NO) revert InvalidOrder();
         if (grant.outcome != (kind >= BUY_NO ? 1 : 0) || grant.side != (kind == SELL_YES || kind == SELL_NO ? 1 : 0)) revert InvalidOrder();
 
@@ -173,7 +184,7 @@ contract SliceExecutionRouter {
     }
 
     function _validateGrant(ExecutionGrant calldata grant, bytes calldata signature) private view returns (bytes32 digest) {
-        if (grant.owner == address(0) || grant.executor == address(0) || grant.marketId == bytes32(0) || grant.maxContracts == 0 || msg.sender != grant.executor) revert InvalidGrant();
+        if (grant.owner == address(0) || grant.executor == address(0) || grant.marketId == bytes32(0) || grant.pool == address(0) || grant.collateral == address(0) || grant.outcomeToken == address(0) || grant.oneCollateral == 0 || grant.maxContracts == 0 || msg.sender != grant.executor) revert InvalidGrant();
         if (grant.expiresAt <= block.timestamp) revert GrantExpired();
         if (grant.expiresAt <= grant.issuedAt || grant.issuedAt > block.timestamp + 60) revert InvalidGrant();
         if (grant.outcome > 1 || grant.side > 1) revert InvalidGrant();
@@ -182,6 +193,11 @@ contract SliceExecutionRouter {
             grant.owner,
             grant.executor,
             grant.marketId,
+            grant.pool,
+            grant.collateral,
+            grant.outcomeToken,
+            grant.outcomeTokenId,
+            grant.oneCollateral,
             grant.outcome,
             grant.side,
             grant.maxContracts,
@@ -190,6 +206,7 @@ contract SliceExecutionRouter {
             grant.nonce
         ))));
         if (_recover(digest, signature) != grant.owner) revert InvalidSignature();
+        if (!ISliceRouterSessionPolicy(sessionPolicy).isActive(digest)) revert GrantNotActive();
     }
 
     function _domainSeparator() private view returns (bytes32) {
