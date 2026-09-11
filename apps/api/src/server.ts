@@ -10,7 +10,7 @@ import { DreamDexVenue } from "./venue.js";
 import { QuotingBot } from "./quoting-bot.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
-dotenv.config({ path: process.env.DOTENV_CONFIG_PATH ?? path.join(projectRoot, ".env") });
+dotenv.config({ path: path.join(projectRoot, ".env") });
 
 const env = readEnv();
 const db = new Pool({ connectionString: env.databaseUrl });
