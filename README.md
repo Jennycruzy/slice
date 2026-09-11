@@ -1,97 +1,124 @@
 # Slice
 
-> **Prediction markets have order books but no execution tools. Every serious trader silently overpays on entry. Slice is the first product that fixes it.**
+**Slice is an execution tool for DreamDEX event contracts on Somnia.** You give it a large order. It works that order into smaller child orders against the live order book, records what a single market order would have cost at the same moment, and publishes a receipt that proves the difference from real on-chain fills.
 
-Slice is an execution layer for DreamDEX Event Contracts on Somnia Shannon. It snapshots a live binary-market book before an execution, works the order as visible child orders, reconciles fills from chain state, and publishes a receipt whose prices are traceable to that snapshot and those transactions.
+> **Work size without sweeping the book.**
 
-## Current status
+## The problem
 
-The product is live at [slice-app-brown.vercel.app](https://slice-app-brown.vercel.app), backed by the [production health endpoint](https://slice.54-154-121-30.sslip.io/health) on Somnia Shannon. The execution engine runs as an auto-restarting Lightsail service with PostgreSQL durability; the static frontend runs on Vercel.
+Event-contract order books are thin. A trader who wants real size and sends one market order walks straight through every resting level, pays a worse price on each one, and shows the whole book what they are doing. Prediction markets have order books but no execution tools, so every serious trader silently overpays on entry. Slice fixes that.
 
-The production UI only exposes capabilities that have passed a live venue check. The remaining acceptance evidence is listed honestly below rather than presented as complete.
+## See it live
 
-## Run locally
+**Web app:** <https://slice.54-154-121-30.sslip.io>
 
-Requirements: Node 20+, a Postgres database, and network access to Somnia Shannon. Copy `.env.example` to `.env`, set `DATABASE_URL`, and set `EXECUTOR_PRIVATE_KEY` only for a server that you control. The executor key is a delegated trading key; it must never be a user key.
+| What to check | Where |
+| --- | --- |
+| Open the terminal, pick a market, preview a size (no wallet needed) | <https://slice.54-154-121-30.sslip.io/trade> |
+| Every verified execution, including cancelled ones | <https://slice.54-154-121-30.sslip.io/executions> |
+| Engine status, deployed contracts, execution path | <https://slice.54-154-121-30.sslip.io/proof> |
+| A real receipt: 3 child orders, 3 confirmed transactions | <https://slice.54-154-121-30.sslip.io/r/06160223-277d-4f2e-93ea-bfdcefe5ddbc> |
+| One of those child transactions on the Somnia explorer | <https://shannon-explorer.somnia.network/tx/0xa64d2f486e317c7972ce320887ce9c9fc474f9fc4ab97e0ec8acd9c4a3ac056a> |
+| Live engine health as JSON | <https://slice.54-154-121-30.sslip.io/health> |
+| Reactivity firing with the Slice server stopped: this fill… | <https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070> |
+| …triggered this handler transaction on its own | <https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790> |
+| A receipt produced through the CCXT surface | <https://slice.54-154-121-30.sslip.io/r/e4317259-80bb-4a2a-bb66-4906cd6147e6> |
+| A receipt produced by an agent through MCP | <https://slice.54-154-121-30.sslip.io/r/dd39958f-0c4c-4339-9941-968c9aeb905b> |
+| Session policy contract (checks every grant) | <https://shannon-explorer.somnia.network/address/0x09113669c5D6E4f343966bDdF893Ad8Cb1f16c5A> |
+| Execution router contract (places orders the user still owns) | <https://shannon-explorer.somnia.network/address/0xd67788012397291490A88657fB99e59b84a74A11> |
+| Reactivity exit handler (runs exits even if Slice is offline) | <https://shannon-explorer.somnia.network/address/0x3B6F62b77f98B04170354D3AA68DF8038de27B07> |
+
+The site runs on Somnia Shannon (chain 50312). Executing needs a wallet on Shannon with test collateral; previewing and reading receipts need nothing.
+
+## What you see in 60 seconds
+
+1. **Trade** shows the live DreamDEX book with depth bars, and an order ticket.
+2. **Preview** walks the live book and shows two prices side by side: what one market order would pay, and what the Slice plan projects. The card is labelled PROJECTED and pinned to the block it read.
+3. **Start Slice** asks the wallet for one signature that authorises exactly this market, this side, this many contracts, and an expiry. The server never holds your key.
+4. **Working order** shows each child order as it fills, with its transaction link, and an engine log.
+5. **Receipt** shows the verified average price, the savings against the market-order price, every child transaction, the book snapshot it was measured against, and the authorisation that was used.
+6. **Set my exit** arms a take-profit, stop-loss, or "exit if the book thins" rule on-chain. Somnia Reactivity runs it whether or not the Slice server is up.
+
+Every number on screen is marked LIVE, SNAPSHOT, PROJECTED, or VERIFIED, so a reader always knows whether they are looking at a forecast or a fact.
+
+## How it works
+
+1. **Read the book.** Before the first child order, Slice stores the full order book at a fixed block.
+2. **Plan.** It walks that book to price a single market order, then builds a child-order plan. *Hide my size* shows the book only a small visible slice at a time; *Scale in* spreads the order across the market's remaining window.
+3. **Execute.** Child orders go through the execution router under the user's signed grant. Orders stay owned by the user; the router can place them but cannot withdraw anything.
+4. **Prove.** Fills are read back from on-chain `OrderFilled` events and transaction receipts, never from a local counter. The receipt compares those real fills with the stored snapshot.
+
+If the live book cannot fill the requested size inside resting orders, the preview refuses. Slice does not guess at depth that is not there.
+
+## What is on-chain
+
+| Piece | Address |
+| --- | --- |
+| Session policy | `0x09113669c5D6E4f343966bDdF893Ad8Cb1f16c5A` |
+| Execution router | `0xd67788012397291490A88657fB99e59b84a74A11` |
+| Reactivity exit handler | `0x3B6F62b77f98B04170354D3AA68DF8038de27B07` |
+| Reactivity emitter | `0xC5Fa5aA238977bcC7C05290De2F1714b11559027` |
+| Reactivity subscription | `18329865` |
+| Delegated executor (the only key the server holds) | `0x69eb1bAA26BffCD0fA9089aa2187F6Ca3e2A54f6` |
+
+The browser signs an EIP-712 grant scoped to one market, one side, a contract cap, an expiry, and the executor address. The server checks that grant before every child order and honours on-chain revocation. For buys the wallet also approves collateral to the router; for sells it approves the outcome token. Both approvals are shown before signing.
+
+**Quoting account.** The server can run a small, bounded two-sided quoting account so that there is a real book to measure against on testnet. It is on only when `QUOTER_ENABLED=true` and every size, spread, and refresh value is set. Its address is shown on the Proof page. That depth is disclosed, not presented as organic volume.
+
+**If the server dies.** Child orders already on DreamDEX stay there and settle by the venue's rules; each carries its own expiry. Any registered exit rule keeps running through Somnia Reactivity. When the server returns it rebuilds the execution from chain receipts before continuing.
+
+## What has actually run
+
+As of 11 September 2026 the public receipt store holds 6 executions and 11 confirmed child fills, all deliberately tiny test orders (0.011 contracts in total). Measured savings across them are $0.00 raw and $0.000009 after drift, because each order fit inside one resting level. These are real measured numbers, not extrapolations. The clearest examples are the [three-child hide-my-size run](https://slice.54-154-121-30.sslip.io/r/fcefedb5-6fcf-4668-a058-a95c57973b23), a [cancelled partial receipt](https://slice.54-154-121-30.sslip.io/r/a20af704-e084-4236-b867-d0ee90995e81), and the [three-tranche scale-in](https://slice.54-154-121-30.sslip.io/r/06160223-277d-4f2e-93ea-bfdcefe5ddbc).
+
+**The hard part was exits that keep working when the server is down.** Registering a Reactivity rule was easy; delivering it reliably was not. A subscription with no priority could be skipped, and once guaranteed delivery was on, a single expired rule could revert inside the router and take every other valid rule for that pool down with it. Slice now pays an explicit validator priority, uses a guaranteed subscription, and wraps each router attempt so a stale, revoked, expired or underfunded rule emits a failure event and evaluation continues. That handler was contract-tested, redeployed with verified source, and then proven with the API process stopped: fill [`0x2462…4070`](https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070) caused the handler to send [`0xd7aa…4790`](https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790) on its own. The capture is in [`evidence/reactivity-offline-2026-09-11.json`](evidence/reactivity-offline-2026-09-11.json).
+
+## For scripts and agents
+
+- **REST:** `POST /api/preview-impact`, `POST /api/executions`, `GET /api/executions/:id`, `GET /api/executions/:id/events`, `GET /api/receipts/:id`.
+- **CCXT:** [`docs/ccxt.md`](docs/ccxt.md), with a working example in [`examples/ccxt-order.mjs`](examples/ccxt-order.mjs).
+- **MCP:** [`docs/mcp.md`](docs/mcp.md). Discovery files for agents: [`AGENTS.md`](AGENTS.md) and [`SKILL.md`](SKILL.md).
+
+## Run it yourself
+
+Needs Node 20+, a PostgreSQL database, and network access to Somnia Shannon.
 
 ```sh
+cp .env.example .env      # set DATABASE_URL; set EXECUTOR_PRIVATE_KEY only on a server you control
 npm install
 npm run build
-npm run dev
+npm test
+npm run audit:integrity
+npm run dev               # API on :8787, web app on :5173
 ```
 
-The frontend reads the live event-contract market list and order book through `@somnia-chain/markets-sdk`. Event-contract data does not use the DreamDEX spot REST API. The server exposes health, market, preview, execution, SSE progress, receipt, CCXT, and MCP surfaces only when their required live configuration exists.
+The executor key is a delegated trading key for the server. It must never be a user's key.
+
+`npm run audit:integrity` scans every production source file and fails on test doubles, placeholder controls, swallowed errors, hard-coded venue values, or buttons that do nothing.
+
+## Repository map
+
+```text
+apps/web        React app: landing, trade terminal, executions, proof, integrations
+apps/api        Execution engine, receipts, progress stream, CCXT and MCP surfaces
+packages/core   Book walking, strategy planning, grant types shared by both
+packages/mcp    MCP server exposing the five agent tools
+contracts       Session policy, execution router, reactivity exit handler
+deploy          systemd unit and Nginx config for the server
+docs            Live venue findings, CCXT and MCP references
+evidence        Captured live market, book, and Reactivity-offline responses
+```
 
 ## Deployment
 
-The long-lived execution engine, PostgreSQL store, Nginx HTTPS boundary, and
-delegated executor run on the VPS. The static React build runs on Vercel. In
-the Vercel project settings, set:
+The engine, PostgreSQL, Nginx, and the delegated executor run on one server. The web app is a static build served by the same Nginx host, so the browser and the API share an origin. See [`deploy/`](deploy/). The web app can also be hosted separately (for example on Vercel using [`vercel.json`](vercel.json)) by setting `VITE_API_URL` to the API's public URL. Never put `DATABASE_URL`, `EXECUTOR_PRIVATE_KEY`, or any wallet key in a frontend host.
 
-```text
-VITE_API_URL=https://slice.54-154-121-30.sslip.io
-```
+## Live venue notes
 
-The repository's [`vercel.json`](vercel.json) supplies the build and output
-settings. Never put `DATABASE_URL`, `EXECUTOR_PRIVATE_KEY`, or a wallet-owner
-key in Vercel. The VPS deployment layout and service unit are in
-[`deploy/`](deploy/).
-
-## Live venue findings
-
-The findings are recorded in [`docs/live-findings.md`](docs/live-findings.md). The important constraints are:
-
-- Shannon is chain `50312`; the live event-contract surface is `@somnia-chain/markets-sdk` `0.29.0` or newer.
-- A market is keyed by `marketId` and a pool address is resolved from the current on-chain market record; pool addresses are recycled across windows.
-- The indexer is used for discovery, but every write is gated by the live on-chain status.
-- A full book snapshot is persisted before the first child order. The receipt calculator walks that exact snapshot and never extrapolates depth exhaustion.
-- Fills are reconciled from on-chain `OrderFilled` events and transaction receipts, not from an optimistic local counter.
-
-## Session-key model
-
-The browser creates an EIP-712 grant scoped to one market, one side, a contract cap, an expiry, and the executor address. The server verifies that grant before every child placement and checks revocation. For binary orders, the browser also authorises the live pool's escrow path: collateral allowance to the pool for buys, or ERC-6909 pool-operator approval for sells. Those approvals are separate from the Slice grant; orders remain owned by the user and the executor cannot withdraw.
-
-This split-key shape borrows the session/delegated-wallet pattern highlighted for Mirra and Wagerverse in [Somnia's hackathon coverage](https://somnia.network/blog). The grant policy is narrower than a venue-wide approval because the contracts enforce the exact pool and assets, market, side, cap, expiry, executor, and revocation. The binary-pool escrow approvals are shown before signing so the user can inspect exactly which pool receives authority.
-
-## Server failure
-
-If the Slice process dies, already-placed child orders remain on DreamDEX and settle according to the venue. Each order carries its own expiry, so abandoned liquidity ages off the book. A configured Somnia Reactivity subscription continues to execute an on-chain exit independently of Slice's server; the handler and subscription must be deployed and configured for that guarantee. When the process returns, it reconciles the execution from chain receipts before resuming. The UI exposes engine liveness and gives the user cancel controls.
-
-## Liquidity disclosure
-
-The server runs a bounded two-sided quoter so the comparison can be measured against a real order book. Seeded depth is explicitly not presented as organic volume. The quoter uses its own key and address, `0x5e45e1749E1559ABAA6552d8B9908A08D20998F2`, separate from the delegated executor. Its live status and resting-order count are exposed by `/health`; at the latest evidence capture it was running with two open quotes.
-
-## Integrators
-
-The CCXT API is documented in [`docs/ccxt.md`](docs/ccxt.md), with a real `ccxt.Exchange` example in [`examples/ccxt-order.mjs`](examples/ccxt-order.mjs). The MCP tools are documented in [`docs/mcp.md`](docs/mcp.md). Agent discovery files are [`AGENTS.md`](AGENTS.md) and [`SKILL.md`](SKILL.md).
-
-Deploy contracts with a funded deployer, verify both addresses on the explorer, then create the pool-filtered subscription with `npm run reactivity:subscribe`. The subscription command prints the verified subscription id and transaction hash; copy the handler, emitter, and id into the API environment.
-
-## Deployed infrastructure
-
-- Session policy: [`0x0911…6c5A`](https://shannon-explorer.somnia.network/address/0x09113669c5D6E4f343966bDdF893Ad8Cb1f16c5A)
-- Execution router: [`0xd677…4A11`](https://shannon-explorer.somnia.network/address/0xd67788012397291490A88657fB99e59b84a74A11)
-- Reactivity handler: [`0x3B6F…7B07`](https://shannon-explorer.somnia.network/address/0x3B6F62b77f98B04170354D3AA68DF8038de27B07), verified source
-- Guaranteed Reactivity subscription: `18329865`, filtered to the live demonstration pool
-- Delegated executor: `0x69eb1bAA26BffCD0fA9089aa2187F6Ca3e2A54f6`
-
-## Measured usage
-
-As of 2026-09-11, the durable public receipt store contains 6 executions, 11 confirmed child fills, and 0.011 contracts filled. The volume-weighted improvement across these deliberately tiny test transactions is 0 bps; raw savings are $0.00 and drift-adjusted savings total $0.000009. These are real measured values, not extrapolations. The strongest execution evidence is the [three-child iceberg](https://slice.54-154-121-30.sslip.io/r/fcefedb5-6fcf-4668-a058-a95c57973b23), [cancelled partial receipt](https://slice.54-154-121-30.sslip.io/r/a20af704-e084-4236-b867-d0ee90995e81), and [three-tranche scale-in](https://slice.54-154-121-30.sslip.io/r/06160223-277d-4f2e-93ea-bfdcefe5ddbc).
-
-CCXT and MCP also reached the real write path: [CCXT receipt](https://slice.54-154-121-30.sslip.io/r/e4317259-80bb-4a2a-bb66-4906cd6147e6) and [MCP receipt](https://slice.54-154-121-30.sslip.io/r/dd39958f-0c4c-4339-9941-968c9aeb905b).
-
-## Hard problem: callback isolation
-
-The difficult failure was not registering a Reactivity rule; it was reliable delivery under real chain state. A zero-priority subscription could be skipped, and after enabling guaranteed delivery an expired rule could revert inside the execution router, reverting the entire handler callback and blocking unrelated valid rules for the same pool. Slice now pays an explicit validator priority, uses a guaranteed subscription, and isolates every router attempt with `try/catch`. Failed stale, revoked, expired, or underfunded rules emit an on-chain failure event while evaluation continues. The new handler was contract-tested, redeployed, source-verified, then proved with the API process stopped: fill [`0x2462…4070`](https://shannon-explorer.somnia.network/tx/0x24620dd5952560a311bb89ba04f8da6a6a62e440e29f255f5ad3fdb4a8e34070) caused autonomous handler transaction [`0xd7aa…4790`](https://shannon-explorer.somnia.network/tx/0xd7aae2ac7b2f840ad31b05741b21374771fcbbe1acf90c825afc830521904790).
-
-## Evidence and release gate
-
-Live evidence is linked above and summarized in [`docs/live-findings.md`](docs/live-findings.md). Run `npm run audit:integrity` before a release. The audit rejects production paths containing test doubles, placeholder controls, swallowed errors, hardcoded venue values, or incomplete claims.
+Recorded in [`docs/live-findings.md`](docs/live-findings.md). In short: Shannon is chain 50312; the event-contract surface is `@somnia-chain/markets-sdk` 0.29.0 or newer; markets are keyed by id and their pool address is resolved from the current on-chain record because pool addresses are reused across windows; the indexer is used for discovery but every write is gated by the live on-chain status.
 
 ## References
 
-- DreamDEX Event Contracts: <https://app.dreamdex.io/docs/developers/event-contracts>
-- DreamDEX Event-Contract Recipes: <https://app.dreamdex.io/docs/developers/event-contracts/recipes>
+- DreamDEX event contracts: <https://app.dreamdex.io/docs/developers/event-contracts>
 - Somnia on-chain Reactivity: <https://docs.somnia.network/developer/reactivity/reactivity-onchain.md>
-- Somnia Shannon: <https://shannon-explorer.somnia.network>
+- Somnia Shannon explorer: <https://shannon-explorer.somnia.network>
