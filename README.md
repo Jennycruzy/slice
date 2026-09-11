@@ -10,13 +10,15 @@ Event-contract order books are thin. A trader who wants real size and sends one 
 
 ## See it live
 
-**Web app:** <https://slice.54-154-121-30.sslip.io>
+**Web app:** <https://slice-app-brown.vercel.app>
+
+The same build is also served next to the API at <https://slice.54-154-121-30.sslip.io>.
 
 | What to check | Where |
 | --- | --- |
-| Open the terminal, pick a market, preview a size (no wallet needed) | <https://slice.54-154-121-30.sslip.io/trade> |
-| Every verified execution, including cancelled ones | <https://slice.54-154-121-30.sslip.io/executions> |
-| Engine status, deployed contracts, execution path | <https://slice.54-154-121-30.sslip.io/proof> |
+| Open the terminal, pick a market, preview a size (no wallet needed) | <https://slice-app-brown.vercel.app/trade> |
+| Every verified execution, including cancelled ones | <https://slice-app-brown.vercel.app/executions> |
+| Engine status, deployed contracts, execution path | <https://slice-app-brown.vercel.app/proof> |
 | A real receipt: 3 child orders, 3 confirmed transactions | <https://slice.54-154-121-30.sslip.io/r/06160223-277d-4f2e-93ea-bfdcefe5ddbc> |
 | One of those child transactions on the Somnia explorer | <https://shannon-explorer.somnia.network/tx/0xa64d2f486e317c7972ce320887ce9c9fc474f9fc4ab97e0ec8acd9c4a3ac056a> |
 | Live engine health as JSON | <https://slice.54-154-121-30.sslip.io/health> |
@@ -111,7 +113,7 @@ evidence        Captured live market, book, and Reactivity-offline responses
 
 ## Deployment
 
-The engine, PostgreSQL, Nginx, and the delegated executor run on one server. The web app is a static build served by the same Nginx host, so the browser and the API share an origin. See [`deploy/`](deploy/). The web app can also be hosted separately (for example on Vercel using [`vercel.json`](vercel.json)) by setting `VITE_API_URL` to the API's public URL. Never put `DATABASE_URL`, `EXECUTOR_PRIVATE_KEY`, or any wallet key in a frontend host.
+The engine, PostgreSQL, Nginx, and the delegated executor run on one server. The web app is a static build. Vercel hosts it at <https://slice-app-brown.vercel.app> using [`vercel.json`](vercel.json) with `VITE_API_URL` set to the API's public URL; the same Nginx host also serves it next to the API. See [`deploy/`](deploy/). Never put `DATABASE_URL`, `EXECUTOR_PRIVATE_KEY`, or any wallet key in a frontend host.
 
 ## Live venue notes
 
