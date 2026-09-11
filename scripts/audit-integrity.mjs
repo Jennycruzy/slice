@@ -43,8 +43,11 @@ for (const file of files) {
   if (bytes32Literals.some((line) => /0x[0-9a-fA-F]{64}/.test(line))) {
     findings.push(`${label}: literal bytes32 market or venue identifier in a production path`);
   }
-  for (const [lineNumber, line] of contents.split("\n").entries()) {
-    if (line.includes("<button") && !line.includes("onClick=")) findings.push(`${label}:${lineNumber + 1}: button has no click handler`);
+  // A button's opening tag may span several lines; check the whole tag for a handler.
+  for (const match of contents.matchAll(/<button\b[^>]*>/gs)) {
+    if (match[0].includes("onClick=")) continue;
+    const lineNumber = contents.slice(0, match.index).split("\n").length;
+    findings.push(`${label}:${lineNumber}: button has no click handler`);
   }
 }
 
