@@ -6,7 +6,9 @@ Slice is an execution layer for DreamDEX Event Contracts on Somnia Shannon. It s
 
 ## Current status
 
-This repository is being built testnet-first. The production UI only exposes capabilities that have passed a live venue check. A public deployment URL, real transaction hashes, measured usage totals, and contract addresses will be added after those runs; until then they are deliberately absent.
+The execution API is live on Somnia Shannon at [`slice.54-154-121-30.sslip.io`](https://slice.54-154-121-30.sslip.io/health). It runs on an isolated Lightsail service with a local-only PostgreSQL database; existing services on that VPS are separate. The static frontend is configured for Vercel but still requires the repository owner to import the GitHub project and set `VITE_API_URL` to that API URL.
+
+The production UI only exposes capabilities that have passed a live venue check. The remaining acceptance evidence is listed honestly below rather than presented as complete.
 
 ## Run locally
 
@@ -19,6 +21,21 @@ npm run dev
 ```
 
 The frontend reads the live event-contract market list and order book through `@somnia-chain/markets-sdk`. Event-contract data does not use the DreamDEX spot REST API. The server exposes health, market, preview, execution, SSE progress, receipt, CCXT, and MCP surfaces only when their required live configuration exists.
+
+## Deployment
+
+The long-lived execution engine, PostgreSQL store, Nginx HTTPS boundary, and
+delegated executor run on the VPS. The static React build runs on Vercel. In
+the Vercel project settings, set:
+
+```text
+VITE_API_URL=https://slice.54-154-121-30.sslip.io
+```
+
+The repository's [`vercel.json`](vercel.json) supplies the build and output
+settings. Never put `DATABASE_URL`, `EXECUTOR_PRIVATE_KEY`, or a wallet-owner
+key in Vercel. The VPS deployment layout and service unit are in
+[`deploy/`](deploy/).
 
 ## Live venue findings
 
