@@ -16,6 +16,8 @@ const env = readEnv();
 const db = new Pool({ connectionString: env.databaseUrl });
 const store = new PostgresStore(db);
 await store.ensureSchema();
+const repairedReceipts = await store.repairMissingReceipts();
+if (repairedReceipts > 0) console.info(`Repaired ${repairedReceipts} terminal execution receipt(s)`);
 const venue = new DreamDexVenue(env);
 const engine = new ExecutionEngine(venue, store, env);
 const quoter = new QuotingBot(venue, env, (message, details) => console.info(message, details));

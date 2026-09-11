@@ -399,33 +399,12 @@ export class ExecutionEngine {
       }
     }
     const metrics = executionMetrics({ snapshot: execution.snapshot, fills: execution.fills, completionMidPrice });
-    await this.store.setState(executionId, state, {
+    await this.store.completeExecution(executionId, state, {
       metrics,
       completionMidPrice,
       failureCode: failureCode ?? (completionFailure === null ? null : "completion_book_unavailable"),
       failureMessage: failureMessage ?? completionFailure,
     });
-    const completed = await this.status(executionId);
-    if (state === "failed" && completed.fills.length === 0) return;
-    if (completed.completedAt === null) throw new Error("Execution finished without a completion timestamp");
-    const receipt: Receipt = {
-      id: randomUUID(),
-      executionId,
-      marketId: completed.request.marketId,
-      marketName: completed.request.marketName,
-      symbol: completed.request.symbol,
-      side: completed.request.side,
-      strategy: completed.request.strategy,
-      status: state === "completed" ? "completed" : "cancelled" === state ? "cancelled" : "partial",
-      createdAt: completed.createdAt,
-      completedAt: completed.completedAt,
-      snapshot: completed.snapshot,
-      childOrders: completed.children,
-      fills: completed.fills,
-      metrics: metrics,
-      exitRule: completed.exitRule,
-    };
-    await this.store.saveReceipt(receipt);
   }
 
   private async handleRunError(executionId: string, market: VenueMarket | null, error: unknown): Promise<void> {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Pool, QueryResultRow } from "pg";
 import type { BookSnapshot, ChildOrder, ExecutionMetrics, ExecutionRequest, ExecutionState, ExitRule, Fill, Receipt, SessionGrant } from "@slice/core";
 
@@ -49,6 +50,10 @@ export class PostgresStore {
 
   async ensureSchema(): Promise<void> {
     await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS slice_schema_migrations (
+        version TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
       CREATE TABLE IF NOT EXISTS executions (
         id TEXT PRIMARY KEY,
         request JSONB NOT NULL,
@@ -82,6 +87,8 @@ export class PostgresStore {
         payload JSONB NOT NULL,
         created_at TIMESTAMPTZ NOT NULL
       );
+      CREATE INDEX IF NOT EXISTS receipts_created_idx ON receipts (created_at DESC);
+      INSERT INTO slice_schema_migrations (version) VALUES ('001-durable-json-execution-store') ON CONFLICT (version) DO NOTHING;
     `);
   }
 
@@ -158,12 +165,28 @@ export class PostgresStore {
   }
 
   async setExitRule(id: string, rule: ExitRule): Promise<void> {
-    await this.pool.query(
-      `UPDATE executions SET exit_rule = $2::jsonb, updated_at = $3, heartbeat_at = $3 WHERE id = $1`,
-      [id, JSON.stringify(rule), new Date()],
-    );
-    const receipt = await this.getReceiptForExecution(id);
-    if (receipt !== null) await this.saveReceipt({ ...receipt, exitRule: rule });
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const now = new Date();
+      const result = await client.query<ExecutionRow>(
+        `UPDATE executions SET exit_rule = $2::jsonb, updated_at = $3, heartbeat_at = $3 WHERE id = $1 RETURNING *`,
+        [id, JSON.stringify(rule), now],
+      );
+      const row = result.rows[0];
+      if (row === undefined) throw new Error(`Execution ${id} no longer exists`);
+      const receiptResult = await client.query<QueryResultRow & { payload: Receipt }>(`SELECT payload FROM receipts WHERE execution_id = $1 FOR UPDATE`, [id]);
+      const receipt = receiptResult.rows[0]?.payload;
+      if (receipt !== undefined) {
+        await client.query(`UPDATE receipts SET payload = $2::jsonb WHERE execution_id = $1`, [id, JSON.stringify({ ...receipt, exitRule: rule })]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async requestCancel(id: string): Promise<void> {
@@ -204,9 +227,70 @@ export class PostgresStore {
   async saveReceipt(receipt: Receipt): Promise<void> {
     await this.pool.query(
       `INSERT INTO receipts (id, execution_id, payload, created_at) VALUES ($1, $2, $3::jsonb, $4)
-       ON CONFLICT (execution_id) DO UPDATE SET payload = EXCLUDED.payload`,
+       ON CONFLICT (execution_id) DO UPDATE SET payload = EXCLUDED.payload, created_at = EXCLUDED.created_at`,
       [receipt.id, receipt.executionId, JSON.stringify(receipt), new Date(receipt.completedAt)],
     );
+  }
+
+  async completeExecution(
+    id: string,
+    state: Extract<ExecutionState, "completed" | "partial" | "cancelled" | "failed">,
+    details: { metrics: ExecutionMetrics; completionMidPrice: string | null; failureCode?: string | null; failureMessage?: string | null },
+  ): Promise<{ execution: ExecutionRecord; receipt: Receipt | null }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const now = new Date();
+      const completedAt = now;
+      const updated = await client.query<ExecutionRow>(
+        `UPDATE executions
+         SET state = $2, metrics = $3::jsonb, completion_mid_price = $4,
+             failure_code = $5, failure_message = $6, completed_at = $7, updated_at = $8, heartbeat_at = $8
+         WHERE id = $1
+         RETURNING *`,
+        [id, state, JSON.stringify(details.metrics), details.completionMidPrice, details.failureCode ?? null, details.failureMessage ?? null, completedAt, now],
+      );
+      const row = updated.rows[0];
+      if (row === undefined) throw new Error(`Execution ${id} no longer exists`);
+      const execution = this.toExecution(row);
+      let receipt: Receipt | null = null;
+      if (execution.completedAt !== null && execution.metrics !== null && (state !== "failed" || execution.fills.length > 0)) {
+        const existing = await client.query<QueryResultRow & { payload: Receipt }>(`SELECT payload FROM receipts WHERE execution_id = $1 FOR UPDATE`, [id]);
+        const receiptId = existing.rows[0]?.payload.id ?? randomUUID();
+        receipt = this.receiptFromExecution(execution, receiptId);
+        await client.query(
+          `INSERT INTO receipts (id, execution_id, payload, created_at) VALUES ($1, $2, $3::jsonb, $4)
+           ON CONFLICT (execution_id) DO UPDATE SET payload = EXCLUDED.payload, created_at = EXCLUDED.created_at`,
+          [receipt.id, receipt.executionId, JSON.stringify(receipt), new Date(receipt.completedAt)],
+        );
+      }
+      await client.query("COMMIT");
+      return { execution, receipt };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async repairMissingReceipts(): Promise<number> {
+    const result = await this.pool.query<ExecutionRow>(
+      `SELECT e.*
+       FROM executions e
+       LEFT JOIN receipts r ON r.execution_id = e.id
+       WHERE e.state IN ('completed', 'partial', 'cancelled', 'failed')
+         AND e.completed_at IS NOT NULL
+         AND e.metrics IS NOT NULL
+         AND jsonb_array_length(e.fills) > 0
+         AND r.id IS NULL
+       ORDER BY e.completed_at ASC`,
+    );
+    for (const row of result.rows) {
+      const execution = this.toExecution(row);
+      await this.saveReceipt(this.receiptFromExecution(execution, randomUUID()));
+    }
+    return result.rows.length;
   }
 
   async getReceipt(id: string): Promise<Receipt | null> {
@@ -237,6 +321,27 @@ export class PostgresStore {
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       completedAt: row.completed_at?.toISOString() ?? null,
+    };
+  }
+
+  private receiptFromExecution(execution: ExecutionRecord, id: string): Receipt {
+    if (execution.completedAt === null || execution.metrics === null) throw new Error(`Execution ${execution.id} is not complete enough to create a receipt`);
+    return {
+      id,
+      executionId: execution.id,
+      marketId: execution.request.marketId,
+      marketName: execution.request.marketName,
+      symbol: execution.request.symbol,
+      side: execution.request.side,
+      strategy: execution.request.strategy,
+      status: execution.state === "completed" ? "completed" : execution.state === "cancelled" ? "cancelled" : "partial",
+      createdAt: execution.createdAt,
+      completedAt: execution.completedAt,
+      snapshot: execution.snapshot,
+      childOrders: execution.children,
+      fills: execution.fills,
+      metrics: execution.metrics,
+      exitRule: execution.exitRule,
     };
   }
 }
