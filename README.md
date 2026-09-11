@@ -132,3 +132,7 @@ Recorded in [`docs/live-findings.md`](docs/live-findings.md). In short: Shannon 
 - DreamDEX event contracts: <https://app.dreamdex.io/docs/developers/event-contracts>
 - Somnia on-chain Reactivity: <https://docs.somnia.network/developer/reactivity/reactivity-onchain.md>
 - Somnia Shannon explorer: <https://shannon-explorer.somnia.network>
+
+## License
+
+MIT. See [LICENSE](LICENSE).
