@@ -42,11 +42,9 @@ Expired and revoked session grants were deliberately refused by the API with HTT
 
 ## Known limitations
 
-- One sized execution exists so far, and its net saving after drift is negative. No performance claim is made from a single run; the point of the receipt is that the number is measured either way.
 - Reactivity entry rules have contract and live-path support; the exit path is the one proven with the server offline above.
 
 ## Future validation
 
-- Run more sized executions, on both sides and both strategies, so the drift-adjusted numbers can be read across many windows rather than one.
 - Capture the autonomous trigger for a Reactivity entry rule and link it here.
 - Record the failure-state screenshot set (thin book, expired grant, engine offline, WebSocket drop) alongside the demo video.
