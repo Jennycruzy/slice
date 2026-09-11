@@ -12,9 +12,12 @@
     "@slice/core": "file:../../packages/core",
     "@tanstack/react-query": "^5.74.4",
     "@somnia-chain/markets-sdk": "^0.29.0",
+    "@vitejs/plugin-react": "^4.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "typescript": "^5.8.3",
     "viem": "^2.29.2",
+    "vite": "^6.3.2",
     "wagmi": "^2.15.0"
   },
   "devDependencies": {
